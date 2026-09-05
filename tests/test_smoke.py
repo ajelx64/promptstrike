@@ -6,7 +6,9 @@ from __future__ import annotations
 def test_package_version() -> None:
     import promptstrike
 
-    assert promptstrike.__version__ == "0.1.0"
+    # Pinned deliberately: the version appears in TWO literals (pyproject.toml and
+    # __init__.py) with nothing keeping them in sync, so this catches a half-done bump.
+    assert promptstrike.__version__ == "1.0.0"
 
 
 def test_settings_default_dry_run(monkeypatch) -> None:

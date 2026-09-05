@@ -96,3 +96,11 @@ product and there is no release cadence.
 
 **Use it only against systems you are authorized to test.** You own that authorization decision —
 registering a program in the scope registry is an assertion that you are permitted to test it.
+
+## Security
+
+Found a vulnerability **in this tool**? See [SECURITY.md](SECURITY.md) — please use GitHub's private
+vulnerability reporting rather than a public issue.
+
+Found a vulnerability in a **target** using this tool? That belongs to that program's disclosure
+process, not here.
