@@ -1,0 +1,88 @@
+# OWASP Top 10 for Agentic Applications, 2026 edition (Agentic Security Initiative).
+# Source + license recorded in MANIFEST.yaml under key `owasp_agentic`.
+#
+# VERIFICATION STATUS — verified 2026-07-24.
+# The ASI01..ASI10 ids and all ten title strings are confirmed verbatim against the canonical
+# primary document: "OWASP Top 10 For Agentic Applications 2026", Version 2026, December 2025
+# (genai.owasp.org/download/52117, 57pp), by extracting the PDF text and reading the section
+# headings and the executive summary list directly. Two titles were corrected during verification:
+#   - ASI02 was "Tool Misuse" — the canonical heading is "Tool Misuse and Exploitation".
+#   - ASI03 was "Identity & Privilege Abuse" — the canonical enumerated list spells it
+#     "Identity and Privilege Abuse" (the doc uses the "&" form only in cross-references).
+# The other eight matched the canonical headings exactly, including the "(RCE)" in ASI05.
+# The `description` fields are our own concise summaries (not verbatim upstream text), each checked
+# 2026-07-24 against the corresponding "Description" section of the canonical PDF for fidelity;
+# ASI02 was tightened to match the doc's scoping (misuse of tools the agent is *authorized* to use,
+# distinct from ASI03), the other nine were confirmed faithful as written.
+#
+# DO NOT confuse this with github.com/precize/OWASP-Agentic-AI, which is an UNOFFICIAL third-party
+# project using an unrelated, non-sequential AAI0xx scheme.
+
+entries:
+  - id: ASI01:2026
+    title: Agent Goal Hijack
+    description: >-
+      An attacker redirects an autonomous agent's plan or objective away from its intended task.
+    verified: true
+
+  - id: ASI02:2026
+    title: Tool Misuse and Exploitation
+    description: >-
+      An agent is manipulated into misusing or exploiting tools it is legitimately authorized to
+      use — via prompt injection, misalignment, or unsafe delegation — causing harm such as data
+      exfiltration, tool-output manipulation, or workflow hijacking.
+    verified: true
+
+  - id: ASI03:2026
+    title: Identity and Privilege Abuse
+    description: >-
+      An agent's identity or permission grants are misused, confused, or escalated beyond intended
+      scope.
+    verified: true
+
+  - id: ASI04:2026
+    title: Agentic Supply Chain Vulnerabilities
+    description: >-
+      Compromised components, dependencies, or third-party agent/tool integrations undermine the
+      agent pipeline.
+    verified: true
+
+  - id: ASI05:2026
+    title: Unexpected Code Execution (RCE)
+    description: >-
+      An agent is manipulated into executing arbitrary or unintended code.
+    verified: true
+
+  - id: ASI06:2026
+    title: Memory & Context Poisoning
+    description: >-
+      An attacker injects malicious or misleading content into an agent's persistent memory or
+      context window.
+    verified: true
+
+  - id: ASI07:2026
+    title: Insecure Inter-Agent Communication
+    description: >-
+      Communication channels between cooperating agents lack authentication or integrity controls
+      and can be exploited.
+    verified: true
+
+  - id: ASI08:2026
+    title: Cascading Failures
+    description: >-
+      A failure or compromise in one agent propagates and amplifies across a multi-agent system.
+    verified: true
+
+  - id: ASI09:2026
+    title: Human-Agent Trust Exploitation
+    description: >-
+      An attacker exploits the trust a human operator places in an agent's outputs or
+      recommendations.
+    verified: true
+
+  - id: ASI10:2026
+    title: Rogue Agents
+    description: >-
+      An agent operates outside its intended constraints, whether through compromise, drift, or
+      emergent misbehavior.
+    verified: true

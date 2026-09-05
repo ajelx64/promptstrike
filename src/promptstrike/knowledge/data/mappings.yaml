@@ -1,0 +1,124 @@
+# OWASP-LLM category -> framework entries + draft remediation.
+#
+# Keys are values of promptstrike.taxonomy.OwaspLLM; the loader rejects any other key, and rejects
+# any reference to a framework entry that does not exist. Every LLM01..LLM10 category must appear —
+# an unmapped category silently produces an unenriched report, so a test asserts full coverage.
+#
+# PROVENANCE OF THESE ASSOCIATIONS — read before treating them as authoritative.
+# The individual framework ENTRIES (in atlas.yaml, llmsvs.yaml, aidefend.yaml, ...) are transcribed
+# verbatim from upstream sources. The ASSOCIATIONS below — "LLM01 relates to AML.T0051" — are
+# curated by promptstrike. There is no official OWASP-to-ATLAS crosswalk to cite. They are informed
+# by AIDEFEND's published `defendsAgainst` cross-mappings and by direct semantic correspondence
+# (LLM01 Prompt Injection <-> AML.T0051 LLM Prompt Injection), but composing two published relations
+# into a third is a derivation, not a citation. Reports should present these as "related framework
+# references", never as an upstream-published mapping.
+#
+# `remediation` is a starting draft for the operator to edit, grounded in the referenced controls.
+# It is deliberately NOT auto-applied to Finding.remediation — see knowledge.suggest_remediation.
+
+LLM01:
+  llmsvs: ["5.11", "5.12", "5.1", "5.2"]
+  owasp_agentic: ["ASI01:2026"]
+  atlas: ["AML.T0051", "AML.T0051.000", "AML.T0051.001", "AML.T0051.002", "AML.T0054", "AML.T0065", "AML.T0068"]
+  aidefend: ["AID-H-002", "AID-H-017", "AID-H-027", "AID-D-001"]
+  remediation: >-
+    Treat every prompt component as untrusted, including reflected stored data, third-party API
+    responses, and prior completions (LLMSVS 5.12). Construct prompts server-side rather than
+    accepting a complete prompt from the client (LLMSVS 5.1, 5.2), and deploy prompt-injection guards
+    that scan both prompts and completions (LLMSVS 5.11). Enforce an instruction hierarchy so system
+    and developer instructions cannot be overridden by user-supplied content.
+
+LLM02:
+  llmsvs: ["4.3", "5.10", "2.8"]
+  atlas: ["AML.T0057", "AML.T0024", "AML.T0024.000", "AML.T0024.001", "AML.T0077"]
+  aidefend: ["AID-H-005", "AID-H-006", "AID-H-033", "AID-D-003"]
+  remediation: >-
+    Audit training and context data for sensitive content and remove it before use (LLMSVS 2.8).
+    Add controls that detect leakage from internal knowledge bases supplied as context, and verify the
+    model cannot be coerced into disclosing them (LLMSVS 4.3). Ensure client-facing responses expose
+    sanitized messages rather than raw provider errors, stack traces, or diagnostics (LLMSVS 5.10).
+
+LLM03:
+  llmsvs: ["7.1", "7.2", "7.4", "2.9", "2.10"]
+  owasp_agentic: ["ASI04:2026"]
+  atlas: ["AML.T0010", "AML.T0010.001", "AML.T0010.003", "AML.T0011.001", "AML.T0060", "AML.T0109"]
+  aidefend: ["AID-H-003", "AID-H-023", "AID-H-024", "AID-H-025", "AID-D-004"]
+  remediation: >-
+    Acquire all third-party model components from trusted sources (LLMSVS 7.2, 2.9) and prefer safe
+    serialization formats such as SafeTensors over formats permitting code execution on load
+    (LLMSVS 2.10). Run Software Composition Analysis over dependencies (LLMSVS 7.1) and maintain an
+    SBOM cataloguing components, licenses, and versions (LLMSVS 7.4).
+
+LLM04:
+  llmsvs: ["2.3", "2.4", "2.6", "4.6"]
+  owasp_agentic: ["ASI06:2026"]
+  atlas: ["AML.T0020", "AML.T0018", "AML.T0018.000", "AML.T0019", "AML.T0058", "AML.T0059"]
+  aidefend: ["AID-M-002", "AID-H-007", "AID-D-002", "AID-DV-007", "AID-R-001"]
+  remediation: >-
+    Validate training data for correctness and freedom from malicious content at acquisition, and
+    secure it against modification thereafter (LLMSVS 2.3, 2.4). Track and audit all cleaning and
+    transformation steps so insider tampering is detectable (LLMSVS 2.6). For retrieval systems,
+    ensure knowledge-base updates cannot be used to inject arbitrary documents (LLMSVS 4.6).
+
+LLM05:
+  llmsvs: ["5.13", "5.5"]
+  owasp_agentic: ["ASI05:2026"]
+  atlas: ["AML.T0077", "AML.T0067", "AML.T0067.000", "AML.T0050"]
+  aidefend: ["AID-H-006", "AID-H-026", "AID-D-003"]
+  remediation: >-
+    Treat model output as untrusted input to every downstream consumer (LLMSVS 5.13) — never
+    concatenate completions into SQL, shell commands, or markup; use parameterized queries and
+    context-appropriate encoding. Validate output against an expected schema and reject
+    non-conforming responses rather than coercing them (LLMSVS 5.5).
+
+LLM06:
+  llmsvs: ["6.1", "6.7", "6.10", "6.11"]
+  owasp_agentic: ["ASI02:2026", "ASI03:2026"]
+  atlas: ["AML.T0053", "AML.T0086", "AML.T0101", "AML.T0103", "AML.T0108"]
+  aidefend: ["AID-M-006", "AID-M-009", "AID-H-018", "AID-H-019", "AID-I-005"]
+  remediation: >-
+    Expose only the tools required for the current task, and prevent one task from reaching another
+    task's tools (LLMSVS 6.1). Scope third-party API tokens to the minimum the agent needs
+    (LLMSVS 6.10) and enforce the authenticated principal's authorization inside the plugin rather
+    than trusting the model (LLMSVS 6.7). Require human approval before sensitive or irreversible
+    operations (LLMSVS 6.11).
+
+LLM07:
+  llmsvs: ["5.7", "5.8", "4.3"]
+  atlas: ["AML.T0056", "AML.T0069", "AML.T0069.001", "AML.T0069.002"]
+  aidefend: ["AID-H-017", "AID-M-008", "AID-D-003", "AID-DV-006"]
+  remediation: >-
+    Place canary tokens in the system prompt and alert when they appear in completions (LLMSVS 5.7),
+    and check response entropy to catch encoded exfiltration that evades that check (LLMSVS 5.8).
+    Treat the system prompt as a secret-bearing surface: move genuinely sensitive logic and data out
+    of it entirely, since prompt content should not be relied on for confidentiality (LLMSVS 4.3).
+
+LLM08:
+  llmsvs: ["4.2", "4.4", "4.5", "4.6"]
+  atlas: ["AML.T0070", "AML.T0071", "AML.T0066", "AML.T0064"]
+  aidefend: ["AID-H-021", "AID-D-014", "AID-I-004", "AID-R-005"]
+  remediation: >-
+    Segregate user data in long-term storage so one user's retrieval cannot surface another's records
+    (LLMSVS 4.2). Require authentication on vector databases and caches (LLMSVS 4.4) and enforce least
+    privilege for production access (LLMSVS 4.5). Ensure embedding updates cannot inject arbitrary
+    documents or false information into the index (LLMSVS 4.6).
+
+LLM09:
+  llmsvs: ["5.6", "3.2", "3.4"]
+  atlas: ["AML.T0062", "AML.T0060", "AML.T0067", "AML.T0067.000"]
+  aidefend: ["AID-M-003", "AID-H-014", "AID-D-009", "AID-D-015"]
+  remediation: >-
+    Continuously monitor interactions, logging inputs and outputs to surface unexpected behavior
+    (LLMSVS 3.2), and analyze interaction history for manipulation attempts (LLMSVS 3.4). Validate
+    that response language and form match expectations (LLMSVS 5.6). Where responses are grounded in
+    retrieved sources, derive attribution from retrieval metadata so provenance cannot be fabricated.
+
+LLM10:
+  llmsvs: ["5.14", "5.15", "5.9"]
+  atlas: ["AML.T0029", "AML.T0034", "AML.T0034.000", "AML.T0034.001", "AML.T0034.002", "AML.T0046"]
+  aidefend: ["AID-I-003", "AID-I-005", "AID-D-005", "AID-D-017"]
+  remediation: >-
+    Apply API rate limiting to any path that triggers model inference, sized to the abuse threat model
+    rather than a generic throttle (LLMSVS 5.14). Enforce length and termination controls on
+    completions (LLMSVS 5.9), and configure provider-side cost alerts so runaway consumption is
+    detected before it becomes material (LLMSVS 5.15).

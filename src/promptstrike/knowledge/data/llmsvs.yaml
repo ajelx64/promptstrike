@@ -1,0 +1,100 @@
+# OWASP Large Language Model Security Verification Standard (LLMSVS) v2.0.
+# Source + license recorded in MANIFEST.yaml under key `llmsvs`.
+#
+# Requirement ids are flat two-part (<chapter>.<requirement>, e.g. "5.11") — no third level, unlike
+# AISVS. Each requirement applies at one or more assurance levels (L1/L2/L3) simultaneously, so
+# `levels` is a list rather than a single value.
+#
+# `title` carries the requirement statement itself; verification-standard requirements have no
+# separate short label upstream.
+#
+# NOT YET SHIPPED: OWASP AISVS (github.com/OWASP/AISVS, v1.0 LOCKED, 12 chapters C1-C12, ~200
+# requirements, `v1.0-C9.4.3` citation form). Deliberately deferred — it overlaps LLMSVS heavily and
+# would double the pack. Add as a sixth framework when agentic/MCP-specific controls are needed.
+
+entries:
+  # V1 — Secure configuration and maintenance
+  - {id: "1.1", chapter: V1, levels: [L2, L3], title: "Identify components storing secrets (API keys) for third-party systems (hosted LLMs, vector DBs) and secure them per OWASP ASVS service-credential requirements."}
+  - {id: "1.2", chapter: V1, levels: [L2, L3], title: "For self-hosted LLMs, ensure appropriate network segregation to prevent direct end-user exposure unless required."}
+  - {id: "1.3", chapter: V1, levels: [L3], title: "Maintain an up-to-date inventory of all LLM instances and apply regular updates/patches to self-hosted models."}
+  - {id: "1.4", chapter: V1, levels: [L3], title: "Perform and document regular configuration reviews for LLM-powered system settings."}
+
+  # V2 — Model lifecycle
+  - {id: "2.1", chapter: V2, levels: [L2, L3], title: "ML model lifecycle is integrated into the existing SSDLC with defined processes for each stage."}
+  - {id: "2.2", chapter: V2, levels: [L2, L3], title: "Document user stories defining requirements and use cases for any new ML model produced."}
+  - {id: "2.3", chapter: V2, levels: [L1, L2, L3], title: "Model training resources and datasets are acquired from trustworthy sources and validated for correctness and freedom from malicious data."}
+  - {id: "2.4", chapter: V2, levels: [L2, L3], title: "Model training resources and datasets are properly secured from unauthorized modification once acquired."}
+  - {id: "2.5", chapter: V2, levels: [L3], title: "The source of any training resources or datasets is documented."}
+  - {id: "2.6", chapter: V2, levels: [L3], title: "Data cleaning and modifications to original training resources are tracked and auditable to reduce insider-threat poisoning risk."}
+  - {id: "2.7", chapter: V2, levels: [L1, L2, L3], title: "IP rights of model training resources are checked to avoid license or copyright infringement; the process is documented and auditable."}
+  - {id: "2.8", chapter: V2, levels: [L2, L3], title: "Model training resources are audited for sensitive data (PII, internal company data) and cleaned before training."}
+  - {id: "2.9", chapter: V2, levels: [L1, L2, L3], title: "Secure acquisition and storage of foundational or pre-trained models."}
+  - {id: "2.10", chapter: V2, levels: [L1, L2, L3], title: "Prefer secure model formats (e.g. SafeTensors) over unsafe serialization formats (e.g. PyTorch Pickle)."}
+  - {id: "2.11", chapter: V2, levels: [L2, L3], title: "Foundational models are fine-tuned to limit irrelevant data points that may cause poor model performance."}
+  - {id: "2.12", chapter: V2, levels: [L2, L3], title: "Regulatory obligations are checked for compliance when handling or processing model training data."}
+  - {id: "2.13", chapter: V2, levels: [L3], title: "An ML Bill-of-Materials (BOM) is produced for each model."}
+  - {id: "2.14", chapter: V2, levels: [L3], title: "Consider watermarking techniques for model responses when model theft is a concern or output must be identifiable."}
+  - {id: "2.15", chapter: V2, levels: [L2, L3], title: "Tooling to detect bias and ensure fairness is integrated into the ML model lifecycle."}
+  - {id: "2.16", chapter: V2, levels: [L2, L3], title: "Security tooling to detect LLM vulnerabilities (injection attacks, jailbreak attempts, abuse) is integrated into the ML model lifecycle."}
+  - {id: "2.17", chapter: V2, levels: [L3], title: "Before finalizing a model for deployment, conduct a thorough security, ethical, and operational risk assessment to guide the deployment decision."}
+  - {id: "2.18", chapter: V2, levels: [L3], title: "A clear plan exists for decommissioning unused models, including secure erasure of data, parameters, and sensitive information."}
+
+  # V3 — Real time learning
+  - {id: "3.1", chapter: V3, levels: [L1, L2, L3], title: "Define clear terms of use and guidelines for interacting with the model; make users aware of acceptable and unacceptable behaviors."}
+  - {id: "3.2", chapter: V3, levels: [L2, L3], title: "Continuously monitor model performance and interactions, logging inputs and outputs in real time to identify unexpected behavior."}
+  - {id: "3.3", chapter: V3, levels: [L3], title: "Clear protocols exist for immediate intervention if the model displays undesirable behavior, including the ability to take the system offline."}
+  - {id: "3.4", chapter: V3, levels: [L3], title: "Regularly analyze user interactions to identify and mitigate attempts to manipulate the model into inappropriate behavior."}
+  - {id: "3.5", chapter: V3, levels: [L3], title: "Consider an incremental-learning approach where the model is updated in increments with human approval."}
+
+  # V4 — Model memory and storage
+  - {id: "4.1", chapter: V4, levels: [L1, L2, L3], title: "Conversational memory mechanisms do not mistakenly mix up prior prompts across different users."}
+  - {id: "4.2", chapter: V4, levels: [L1, L2, L3], title: "Long-term storage mechanisms segregate user data so other users' data cannot be retrieved and false records cannot be injected."}
+  - {id: "4.3", chapter: V4, levels: [L2, L3], title: "Controls exist to detect leakage of sensitive data from internal knowledge bases given to the LLM as context; the LLM cannot be coerced into leaking knowledge-base contents."}
+  - {id: "4.4", chapter: V4, levels: [L1, L2, L3], title: "External storage components (vector databases, caches) require authentication for consumers."}
+  - {id: "4.5", chapter: V4, levels: [L2, L3], title: "Least privilege is enforced for accessing production storage components (vector databases, caches)."}
+  - {id: "4.6", chapter: V4, levels: [L1, L2, L3], title: "When updating embeddings in a knowledge base, an adversary cannot inject arbitrary documents or insert false information."}
+
+  # V5 — Secure LLM integration
+  - {id: "5.1", chapter: V5, levels: [L1, L2, L3], title: "Prompts to LLMs are issued from a trusted server-side component."}
+  - {id: "5.2", chapter: V5, levels: [L1, L2, L3], title: "Prompts to LLMs are constructed server-side rather than accepting the complete prompt directly from the client."}
+  - {id: "5.3", chapter: V5, levels: [L3], title: "Consider redundant LLM accounts or providers to avoid single points of failure and ensure availability."}
+  - {id: "5.4", chapter: V5, levels: [L2, L3], title: "Credentials for LLM providers are securely handled per OWASP ASVS service-credential requirements."}
+  - {id: "5.5", chapter: V5, levels: [L1, L2, L3], title: "Output format and properties of LLM data match the expected structure; for JSON, validate the schema (all expected fields, no extraneous properties); consider structured outputs or constrained decoding as defense-in-depth."}
+  - {id: "5.6", chapter: V5, levels: [L2, L3], title: "The output language of the LLM response matches the expected language."}
+  - {id: "5.7", chapter: V5, levels: [L3], title: "Consider canary tokens in LLM prompts and check whether completions contain the canary word to detect prompt leakage attacks."}
+  - {id: "5.8", chapter: V5, levels: [L3], title: "Check the entropy of LLM responses to detect encoded data aiming to circumvent checks (for example bypassing canary tokens)."}
+  - {id: "5.9", chapter: V5, levels: [L3], title: "Perform length checks on LLM completions to verify the response length is within an expected range."}
+  - {id: "5.10", chapter: V5, levels: [L1, L2, L3], title: "Client-facing responses do not expose raw provider errors, stack traces, or diagnostics that could leak prompts, credentials, or internals; present sanitized messages while retaining structured server-side logging without writing secrets or full sensitive prompts to untrusted logs."}
+  - {id: "5.11", chapter: V5, levels: [L2, L3], title: "Appropriate LLM guards are used to scan prompts and completions to help detect prompt injection attacks."}
+  - {id: "5.12", chapter: V5, levels: [L2, L3], title: "All prompts are considered untrusted and subjected to deployed security controls; reflected stored data, third-party API data, and prior completions may cause indirect prompt injection and must receive the same controls as direct user input."}
+  - {id: "5.13", chapter: V5, levels: [L1, L2, L3], title: "Output of LLM completions is considered untrusted by any subsequent system; for example do not build SQL by concatenating LLM response parts — use parameterized queries or ORMs per ASVS injection-prevention requirements."}
+  - {id: "5.14", chapter: V5, levels: [L2, L3], title: "Systems resulting in LLM calls have appropriate API rate limiting to avoid excessive or unexpected LLM costs."}
+  - {id: "5.15", chapter: V5, levels: [L1, L2, L3], title: "Cost alerts are active within LLM provider configurations to alert when costs exceed expectations."}
+  - {id: "5.16", chapter: V5, levels: [L3], title: "Baselines are defined for normal LLM interactions; abnormal interactions are monitored and alerted on."}
+  - {id: "5.17", chapter: V5, levels: [L2, L3], title: "Any functionality allowing anonymous users to preview features is properly restricted to only necessary features."}
+
+  # V6 — Agents and plugins
+  - {id: "6.1", chapter: V6, levels: [L1, L2, L3], title: "Agent-based solutions only expose access to tools and plugins required for the current task; a task cannot leverage tools or plugins used by another task."}
+  - {id: "6.2", chapter: V6, levels: [L2, L3], title: "Custom plugins and agent tools follow existing SSDLC processes."}
+  - {id: "6.3", chapter: V6, levels: [L2, L3], title: "Third-party plugins and toolkits are properly vetted per existing third-party risk management processes."}
+  - {id: "6.4", chapter: V6, levels: [L2, L3], title: "Parameters for agent tools and plugins are validated prior to execution (type checks at minimum, plus specific validation)."}
+  - {id: "6.5", chapter: V6, levels: [L2, L3], title: "Credentials for third-party services consumed by agent tools and plugins are securely handled per OWASP ASVS."}
+  - {id: "6.6", chapter: V6, levels: [L2, L3], title: "Agent and plugin frameworks contain hooks allowing raw prompts and completions to be intercepted, enabling LLM guards, monitoring, troubleshooting, and auditing."}
+  - {id: "6.7", chapter: V6, levels: [L2, L3], title: "Custom-built plugins consider the scope of the currently authenticated principal; plugins cannot access more than the principal is authorized for."}
+  - {id: "6.8", chapter: V6, levels: [L3], title: "The host executing agent tools and plugins is appropriately segregated from other internal components, with firewall rules restricting unrelated services."}
+  - {id: "6.9", chapter: V6, levels: [L3], title: "The host executing agent tools and plugins is restricted from arbitrary egress network requests — only required API and service traffic is allowed."}
+  - {id: "6.10", chapter: V6, levels: [L2, L3], title: "API tokens for third-party services are scoped to the minimum required by the agent or plugin (for example a Slack-channel-reading agent cannot read other channels or post)."}
+  - {id: "6.11", chapter: V6, levels: [L3], title: "Consider manual approval (human in the loop) for sensitive operations before autonomous agents continue execution."}
+  - {id: "6.12", chapter: V6, levels: [L3], title: "Agents are executed in a sandboxed ephemeral environment to reduce the risk of agent prompts causing code execution via software defects."}
+
+  # V7 — Dependency and component
+  - {id: "7.1", chapter: V7, levels: [L2, L3], title: "Software Composition Analysis (SCA) tools are used to identify and remediate known vulnerabilities in third-party components used in LLM-powered applications."}
+  - {id: "7.2", chapter: V7, levels: [L1, L2, L3], title: "All third-party LLM components are acquired from a trusted source."}
+  - {id: "7.3", chapter: V7, levels: [L2, L3], title: "A defined vulnerability and patch management process exists for third-party components."}
+  - {id: "7.4", chapter: V7, levels: [L2, L3], title: "A Software Bill of Materials (SBOM) exists cataloging third-party components, licenses, and versions."}
+  - {id: "7.5", chapter: V7, levels: [L2, L3], title: "Where unsafe PyTorch models are required, the model is scanned for potentially dangerous Python imports."}
+  - {id: "7.6", chapter: V7, levels: [L2, L3], title: "When hosting LLM components within private package registries, the setup is not susceptible to dependency confusion attacks."}
+
+  # V8 — Monitoring and anomaly detection
+  - {id: "8.1", chapter: V8, levels: [L2, L3], title: "LLM application usage patterns are continuously monitored for anomalies indicating security incidents (usage spikes, output-pattern deviations)."}
+  - {id: "8.2", chapter: V8, levels: [L2, L3], title: "Logging and alerting is established for events suggesting prompt leaks (for example canary tokens per 5.7 appearing in logs, or unexpected language patterns)."}

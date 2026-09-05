@@ -1,0 +1,3 @@
+# Optional: HTML->PDF report rendering. Requires system GTK/Pango libraries.
+# The report engine soft-fails to HTML/Markdown if this (or the system libs) is unavailable.
+weasyprint>=60

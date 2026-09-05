@@ -1,0 +1,12 @@
+target-version = "py311"
+line-length = 110
+
+[lint]
+select = ["E", "F", "I", "W", "UP", "B"]
+# UP042: we intentionally use `(str, Enum)` (not StrEnum) for pydantic-friendly enums.
+ignore = ["UP042"]
+
+[lint.per-file-ignores]
+"tests/*" = ["E501", "B008"]
+# typer requires `= typer.Option(...)` in function defaults; B008 is a false positive there.
+"src/promptstrike/commands/*" = ["B008"]

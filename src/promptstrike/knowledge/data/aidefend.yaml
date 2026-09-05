@@ -1,0 +1,117 @@
+# AIDEFEND — AI Defense Framework. Defensive countermeasures, dataVersion 2026.07.04.
+# Source + license recorded in MANIFEST.yaml under key `aidefend`.
+#
+# ATTRIBUTION WARNING: AIDEFEND is a personal initiative by Edward Lee and explicitly disclaims
+# affiliation with MITRE, OWASP, CSA, Google, Cisco, NIST, and Databricks. It cross-references those
+# frameworks but is NOT endorsed by them. Any report citing an AID-* id must not imply otherwise.
+#
+# 88 top-level countermeasures across 7 tactics, recorded here in `chapter`:
+#   model (10) - harden (36) - detect (17) - isolate (8) - deceive (7) - evict (5) - restore (5)
+# Upstream also defines 218 sub-techniques with finer-grained mappings; those are not vendored yet.
+#
+# AIDEFEND publishes its own `defendsAgainst` cross-mappings to MITRE ATLAS and the OWASP LLM /
+# Agentic lists. Those published mappings are the basis for the `atlas` and `aidefend` references in
+# mappings.yaml — we cite a source's own cross-references rather than constructing our own.
+
+entries:
+  # --- Model (10) ---
+  - {id: AID-M-001, chapter: model, title: "AI Asset Inventory & Mapping", description: "Catalog and map all AI/ML assets: models, datasets, pipelines, and APIs."}
+  - {id: AID-M-002, chapter: model, title: "Data Provenance & Lineage Tracking", description: "Maintain verifiable records of the origin and transformations of training data."}
+  - {id: AID-M-003, chapter: model, title: "Model Behavior Baseline & Documentation", description: "Establish and maintain a documented baseline of expected model behavior."}
+  - {id: AID-M-004, chapter: model, title: "AI Threat Modeling & Risk Assessment", description: "Identify and prioritize AI-specific threats per component across the lifecycle."}
+  - {id: AID-M-005, chapter: model, title: "AI Configuration Benchmarking & Secure Baselines", description: "Establish and audit secure configurations for all AI system components."}
+  - {id: AID-M-006, chapter: model, title: "Human-in-the-Loop (HITL) Control Point Mapping", description: "Identify and validate every designed human oversight and intervention point."}
+  - {id: AID-M-007, chapter: model, title: "AI Use Case & Safety Boundary Modeling", description: "Formally document intended purpose, operational boundaries, and guardrails."}
+  - {id: AID-M-008, chapter: model, title: "Automated Agentic Security Benchmarking", description: "Run standardized agent security benchmarks in CI to measure attack resistance."}
+  - {id: AID-M-009, chapter: model, title: "Agent Autonomy & Authority Governance", description: "Define permitted agent autonomy before deployment and enforce it at runtime."}
+  - {id: AID-M-010, chapter: model, title: "AI Asset Retirement, Transfer & End-of-Life Governance", description: "Define verifiable end-of-life procedures for models, configs, and datasets."}
+
+  # --- Harden (36) ---
+  - {id: AID-H-001, chapter: harden, title: "Adversarial Robustness Training", description: "Train with crafted adversarial examples to improve resilience to evasion."}
+  - {id: AID-H-002, chapter: harden, title: "AI-Contextualized Data Sanitization & Input Validation", description: "Validate, sanitize, and filter all data entering AI systems."}
+  - {id: AID-H-003, chapter: harden, title: "Secure ML Supply Chain Management", description: "Apply software supply chain security across the AI lifecycle."}
+  - {id: AID-H-004, chapter: harden, title: "Identity & Access Management (IAM) for AI Systems", description: "Enforce IAM across models, APIs, data stores, agent tools, and admin interfaces."}
+  - {id: AID-H-005, chapter: harden, title: "Privacy-Preserving Machine Learning (PPML) Techniques", description: "Use cryptographic and statistical methods to protect data privacy in training and inference."}
+  - {id: AID-H-006, chapter: harden, title: "AI Output Hardening & Sanitization", description: "Transform and sanitize raw model output before it reaches users or downstream systems."}
+  - {id: AID-H-007, chapter: harden, title: "Secure & Resilient Training Process Hardening", description: "Protect the integrity and confidentiality of the training process itself."}
+  - {id: AID-H-008, chapter: harden, title: "Robust Federated Learning Aggregation", description: "Use secure aggregation and defenses against malicious client updates in federated learning."}
+  - {id: AID-H-009, chapter: harden, title: "AI Accelerator & Hardware Integrity", description: "Protect AI hardware against tampering, side channels, fault injection, and trojans."}
+  - {id: AID-H-010, chapter: harden, title: "Transformer Architecture Defenses", description: "Mitigate vulnerabilities inherent to transformer attention and position embeddings."}
+  - {id: AID-H-011, chapter: harden, title: "Classifier-Free Guidance Hardening", description: "Harden the classifier-free guidance mechanism in diffusion models."}
+  - {id: AID-H-012, chapter: harden, title: "Graph Neural Network (GNN) Poisoning Defense", description: "Defend GNNs against poisoning of graph structure or node features."}
+  - {id: AID-H-013, chapter: harden, title: "Reinforcement Learning (RL) Reward Hacking Prevention", description: "Prevent RL agents exploiting reward-function flaws for unintended behavior."}
+  - {id: AID-H-014, chapter: harden, title: "Proactive Data Perturbation & Watermarking", description: "Perturb or watermark source data to disrupt, trace, or defend against downstream misuse."}
+  - {id: AID-H-015, chapter: harden, title: "Ensemble Methods for Robustness", description: "Combine predictions from multiple independently trained models."}
+  - {id: AID-H-016, chapter: harden, title: "Certified Defenses", description: "Provide provable guarantees that output will not change within a robustness radius."}
+  - {id: AID-H-017, chapter: harden, title: "System Prompt Hardening", description: "Separate trusted instructions from untrusted content and enforce instruction hierarchy."}
+  - {id: AID-H-018, chapter: harden, title: "Secure Agent Architecture", description: "Secure-by-design architectural principles for autonomous agents."}
+  - {id: AID-H-019, chapter: harden, title: "Tool Authorization & Capability Scoping", description: "Enforce strict authorization and capability limits on agent-invocable tools."}
+  - {id: AID-H-020, chapter: harden, title: "Safe Fetch & Browser Sandbox for Agents", description: "Control agent HTTP and browsing to prevent SSRF and malicious web content attacks."}
+  - {id: AID-H-021, chapter: harden, title: "RAG Index Hygiene & Signing", description: "Enforce integrity, provenance, and retrieval-time authorization on RAG indexes."}
+  - {id: AID-H-022, chapter: harden, title: "AI Agent Configuration Integrity & Hardening", description: "Protect integrity of agent system prompts, parameters, and config files."}
+  - {id: AID-H-023, chapter: harden, title: "Secure Build & Dependency Installation Environment", description: "Treat dependency installation as a potentially hostile, untrusted step."}
+  - {id: AID-H-024, chapter: harden, title: "Publisher Integrity & Workflow Hardening", description: "Ensure packages are published only from a secure, auditable, authorized source."}
+  - {id: AID-H-025, chapter: harden, title: "Tool & MCP Resolution Integrity", description: "Enforce verified resolution of tools and MCP endpoints against typosquatting and alias collision."}
+  - {id: AID-H-026, chapter: harden, title: "Unsafe Code Execution Prevention", description: "Ban dangerous constructs and gate agent-generated code behind a static scan."}
+  - {id: AID-H-027, chapter: harden, title: "Continuous Closed-Loop Hardening of Retrainable Prompt Injection Detectors", description: "Continuously retrain injection detectors through a governed closed-loop pipeline."}
+  - {id: AID-H-028, chapter: harden, title: "Inference Cache Integrity, Isolation & Poisoning Prevention", description: "Protect inference caches against poisoning, cross-tenant contamination, and unsafe reuse."}
+  - {id: AID-H-029, chapter: harden, title: "MCP & Tool Client Security Hardening", description: "Harden the MCP client runtime that stores credentials and mediates permissions."}
+  - {id: AID-H-030, chapter: harden, title: "AI Data-Use Authorization & Lifecycle-Stage Boundary Enforcement", description: "Enforce purpose-bound, stage-aware authorization on data consumed by AI systems."}
+  - {id: AID-H-031, chapter: harden, title: "Agentic Skill Admission Security Analysis & Control Pipeline", description: "Require multi-stage security analysis before any agent skill is installed."}
+  - {id: AID-H-032, chapter: harden, title: "AI-Generated Code Admission Control & Safe Promotion", description: "Gate AI-generated development artifacts before merge, build, release, or deploy."}
+  - {id: AID-H-033, chapter: harden, title: "Multi-Tenant Inference Isolation & Leakage Prevention", description: "Enforce tenancy-aware isolation for shared inference compute, cache, and telemetry."}
+  - {id: AID-H-034, chapter: harden, title: "AI Gateway Routing Integrity & Policy-Preserving Failover", description: "Treat the model router as a security control plane, not just a cost optimizer."}
+  - {id: AID-H-035, chapter: harden, title: "MCP Server Runtime Boundary & Tool Exposure Governance", description: "Harden the MCP server as an independent trust boundary publishing tools and resources."}
+  - {id: AID-H-036, chapter: harden, title: "Defensive-Agent & Response-Automation Hardening", description: "Apply Zero Trust controls to defensive agents and automated response workflows."}
+
+  # --- Detect (17) ---
+  - {id: AID-D-001, chapter: detect, title: "Adversarial Input & Prompt Injection Detection", description: "Monitor inputs for adversarial manipulation, malicious prompts, and jailbreak attempts."}
+  - {id: AID-D-002, chapter: detect, title: "AI Model Anomaly & Performance Drift Detection", description: "Monitor for statistically significant shifts in inputs, outputs, and performance."}
+  - {id: AID-D-003, chapter: detect, title: "AI Output Monitoring & Policy Enforcement", description: "Inspect model outputs and agent tool calls in near real time against policy."}
+  - {id: AID-D-004, chapter: detect, title: "Model & AI Artifact Integrity Monitoring, Audit & Tamper Detection", description: "Verify cryptographic integrity and authenticity of deployed models and artifacts."}
+  - {id: AID-D-005, chapter: detect, title: "AI Activity Logging, Monitoring & Threat Hunting", description: "Maintain detailed auditable logs of all significant AI system activity."}
+  - {id: AID-D-006, chapter: detect, title: "Explainability (XAI) Manipulation Detection", description: "Validate the outputs and behavior of explainability methods themselves."}
+  - {id: AID-D-007, chapter: detect, title: "Multimodal Inconsistency Detection", description: "Detect contradictions and hidden cross-modal instructions across input modalities."}
+  - {id: AID-D-008, chapter: detect, title: "AI-Based Security Analytics for AI systems", description: "Use secondary defender models to detect subtle or novel attacks in AI telemetry."}
+  - {id: AID-D-009, chapter: detect, title: "Cross-Agent Fact Verification & Hallucination Cascade Detection", description: "Verify claims across agents to catch hallucinated or weakly supported output."}
+  - {id: AID-D-010, chapter: detect, title: "AI Goal Integrity Monitoring & Deviation Detection", description: "Monitor whether agent plans and actions still match the approved goal state."}
+  - {id: AID-D-011, chapter: detect, title: "Agent Behavioral Attestation & Rogue Detection", description: "Continuously attest agent behavior to identify rogue or compromised agents."}
+  - {id: AID-D-012, chapter: detect, title: "Graph Anomaly & Backdoor Detection", description: "Identify malicious nodes, edges, or subgraphs indicating GNN poisoning."}
+  - {id: AID-D-013, chapter: detect, title: "RL Reward & Policy Manipulation Detection", description: "Detect reward hacking and reward tampering in reinforcement learning systems."}
+  - {id: AID-D-014, chapter: detect, title: "RAG Content & Relevance Monitoring", description: "Monitor RAG retrieval behavior at inference time for poisoning and manipulation."}
+  - {id: AID-D-015, chapter: detect, title: "User Trust Calibration & High-Risk Action Confirmation", description: "Surface trust signals to users and require explicit confirmation for high-risk actions."}
+  - {id: AID-D-016, chapter: detect, title: "Rogue Agent Discovery, Reputation & Quarantine Pipeline", description: "Continuously discover, score, and quarantine unknown or compromised agents."}
+  - {id: AID-D-017, chapter: detect, title: "AI Detection SLO & Alert-Coverage Measurement", description: "Track how fast AI anomalies become human-visible and how much of the queue is triaged."}
+
+  # --- Isolate (8) ---
+  - {id: AID-I-001, chapter: isolate, title: "AI Execution Sandboxing & Runtime Isolation", description: "Run models, agents, and tools in sandboxes, containers, or microVMs."}
+  - {id: AID-I-002, chapter: isolate, title: "Network Segmentation & Isolation for AI Systems", description: "Enforce strict network communication boundaries around AI systems."}
+  - {id: AID-I-003, chapter: isolate, title: "Quarantine & Throttling of AI Interactions", description: "Isolate, rate-limit, or safe-mode suspicious AI interactions."}
+  - {id: AID-I-004, chapter: isolate, title: "Agent Memory & State Isolation", description: "Manage lifecycle, integrity, and isolation of agent memory."}
+  - {id: AID-I-005, chapter: isolate, title: "Emergency 'Kill-Switch' / AI System Halt", description: "Maintain a rapidly invokable mechanism to halt a model or agent."}
+  - {id: AID-I-006, chapter: isolate, title: "Malicious Participant Isolation in Federated Unlearning", description: "Isolate malicious client influence during federated unlearning or restoration."}
+  - {id: AID-I-007, chapter: isolate, title: "Client-Side AI Execution Isolation", description: "Contain a compromised client-side model from other tabs, app context, or the OS."}
+  - {id: AID-I-008, chapter: isolate, title: "Task-Scoped Browser Session & Origin Isolation for Agents", description: "Isolate browser-using agents at session, profile, and origin boundaries."}
+
+  # --- Deceive (7) ---
+  - {id: AID-DV-001, chapter: deceive, title: "Honeypot AI Services & Decoy Models/APIs", description: "Deploy decoy AI endpoints that appear valuable or vulnerable to attackers."}
+  - {id: AID-DV-002, chapter: deceive, title: "Honey Data, Decoy Artifacts & Canary Tokens for AI", description: "Seed datasets, repos, and configs with enticing fake data and canary tokens."}
+  - {id: AID-DV-003, chapter: deceive, title: "Dynamic Response Manipulation for AI Interactions", description: "Deliberately degrade responses once adversarial interaction is detected."}
+  - {id: AID-DV-004, chapter: deceive, title: "AI Output Watermarking & Telemetry Traps", description: "Embed watermarks or beacons into generated outputs to trace misuse."}
+  - {id: AID-DV-005, chapter: deceive, title: "Decoy Agent Behaviors & Canary Tasks", description: "Give agents monitored decoy goals or sub-agents that act as traps."}
+  - {id: AID-DV-006, chapter: deceive, title: "Deceptive System Information", description: "Return misleading runtime, capability, or model information to suspicious probes."}
+  - {id: AID-DV-007, chapter: deceive, title: "Poisoning Detection Canaries & Decoy Data", description: "Embed sentinel data points in training sets to detect poisoning and theft."}
+
+  # --- Evict (5) ---
+  - {id: AID-E-001, chapter: evict, title: "Credential Revocation & Rotation for AI Systems", description: "Revoke and rotate any credential known or suspected to be compromised."}
+  - {id: AID-E-002, chapter: evict, title: "AI Process & Session Eviction", description: "Terminate compromised model instances, agent processes, and workloads."}
+  - {id: AID-E-003, chapter: evict, title: "AI Backdoor & Malicious Artifact Removal", description: "Scan for and remove malicious artifacts introduced by an attacker."}
+  - {id: AID-E-004, chapter: evict, title: "Post-Eviction System Patching & Hardening", description: "Perform tactical patching of the exploited vector immediately after eviction."}
+  - {id: AID-E-005, chapter: evict, title: "Compromised Session Termination & State Purging", description: "Expel the adversary and purge residual application-layer footholds."}
+
+  # --- Restore (5) ---
+  - {id: AID-R-001, chapter: restore, title: "Secure AI Model Restoration & Retraining", description: "Restore affected models to a verified known-good state after compromise."}
+  - {id: AID-R-002, chapter: restore, title: "Data Integrity Recovery for AI Systems", description: "Restore integrity of datasets corrupted or tampered with during an incident."}
+  - {id: AID-R-003, chapter: restore, title: "Secure Session & Identity Re-establishment", description: "Re-establish clean, trusted sessions for users and agents after eviction."}
+  - {id: AID-R-004, chapter: restore, title: "Post-Incident Hardening, Verification & Institutionalization", description: "Convert the incident into durable, verified security improvements."}
+  - {id: AID-R-005, chapter: restore, title: "Rapid Vector Index Rollback & Quarantine", description: "Provide fast controlled recovery for RAG pipelines after index poisoning."}

@@ -1,0 +1,66 @@
+# {{ report_title }}
+
+- **Program:** {{ finding.program }} — {{ profile.display_name }}
+- **Severity:** {{ platform_severity }} (CVSS v3.1 {{ finding.cvss_v31_score if finding.cvss_v31_score is not none else 'n/a' }} `{{ finding.cvss_v31_vector }}`)
+- **Category:** {{ finding.category.value }} — {{ owasp_title }}
+- **CWE:** {{ finding.cwe | join(', ') }}
+- **Target:** {{ finding.target }}
+- **Model:** {{ finding.model }} {{ finding.model_version }}
+- **Generated:** {{ generated_date }}
+
+## Summary
+{{ finding.summary or '_(to be completed)_' }}
+
+## Description
+{{ finding.description }}
+
+## Steps to Reproduce
+{% for s in finding.steps_to_reproduce %}{{ loop.index }}. {{ s }}
+{% endfor %}
+## Impact
+{{ finding.impact or '_(to be completed)_' }}
+
+## Remediation
+{{ finding.remediation or '_(to be completed)_' }}
+
+## Evidence
+{% for ev in finding.evidence %}
+### Exchange {{ loop.index }}
+**Prompt:**
+
+~~~text
+{{ ev.prompt }}
+~~~
+
+**Response:**
+
+~~~text
+{{ ev.response }}
+~~~
+{% endfor %}
+{% if finding.cvss_v40_vector %}
+> CVSS v4.0 vector: `{{ finding.cvss_v40_vector }}` (score via FIRST calculator)
+{% endif %}
+
+{% if framework_groups %}
+## Related framework references
+{% for group in framework_groups %}
+**{{ group.name }}**
+
+{% for item in group.refs -%}
+- `{{ item.id }}`{% if item.title %} — {{ item.title }}{% endif %}{% if not item.verified %} _(unverified: {{ item.note }})_{% endif %}
+{% endfor %}
+{% endfor %}
+> These associations are curated by promptstrike to aid triage, informed by published
+> cross-mappings. They are not an upstream-published crosswalk.
+{% endif %}
+
+## {{ profile.display_name }} submission checklist
+{% for item in checklist %}- [{{ 'x' if item.ok else ' ' }}] {{ item.label }}
+{% endfor %}
+{% if attributions %}
+## Attribution
+{% for line in attributions %}- {{ line }}
+{% endfor %}{% endif %}
+---
+_Authorized security testing. {{ compliance_note }}_

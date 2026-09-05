@@ -1,0 +1,33 @@
+# Virtualenvs
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+
+# Secrets — real values live in an env file OUTSIDE this repo (see .env.example).
+.env
+
+# The workspace canon is deliberately NOT vendored into this public repo — it names other
+# projects and records their CI security posture. The generator already excludes this repo;
+# this makes the file un-committable even if that exclusion is ever reverted.
+.claude/rules/
+
+# Local, SENSITIVE runtime state: authorized-program defs, evidence transcripts,
+# findings DB, generated reports. NEVER commit — may contain target details / PoCs.
+# Anchored to the repo root ON PURPOSE. This ignores the local working dir holding program defs,
+# evidence transcripts, the findings DB, and generated reports — which can contain target details and
+# working PoCs. Unanchored (`data/`) it would ALSO swallow src/promptstrike/knowledge/data/, silently
+# excluding the vendored knowledge pack from the package.
+/data/
+reports/
+*.db
+*.sqlite3
+*.pdf

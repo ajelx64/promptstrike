@@ -1,0 +1,109 @@
+# Provenance manifest for the vendored knowledge pack.
+#
+# Every data file in this directory MUST have a source entry here, and every source entry MUST have a
+# data file — the loader refuses to load otherwise. This is not bookkeeping: the ids in these files
+# are cited in vulnerability reports read by third-party triagers, so each one has to be traceable to
+# a specific upstream document, retrieved on a specific date, under a specific license.
+#
+# `verified: false` on a source means its entry wording could not be machine-confirmed against the
+# canonical release (see each entry's `source_note`). It does NOT mean the ids are in doubt.
+#
+# Refreshing this pack is a deliberate, human-reviewed operation. There is intentionally no runtime
+# network fetch: reports must be reproducible offline, and pulling adversarial reference content at
+# test time would be a supply-chain risk in a security tool.
+
+pack_version: "1.0.0"
+
+sources:
+  - key: owasp_llm
+    name: OWASP Top 10 for LLM Applications
+    version: "2025"
+    url: https://genai.owasp.org/llm-top-10/
+    license: CC BY-SA 4.0
+    attribution: >-
+      OWASP Top 10 for LLM Applications (2025), OWASP GenAI Security Project, used under
+      CC BY-SA 4.0. OWASP and the OWASP logo are trademarks of the OWASP Foundation, Inc.
+    retrieved: 2026-07-20
+    verified: true
+    note: >-
+      Confirmed against two independent official sources: genai.owasp.org/llm-top-10/ and the
+      2_0_vulns/ directory of github.com/OWASP/www-project-top-10-for-large-language-model-applications.
+      The legacy list at owasp.org/www-project-top-10-for-large-language-model-applications is a
+      SUPERSEDED 2023 v1.1 in which the same ids carry different meanings — do not refresh from it.
+
+  - key: owasp_agentic
+    name: OWASP Top 10 for Agentic Applications
+    version: "2026"
+    url: https://genai.owasp.org/download/52117
+    license: CC BY-SA 4.0
+    attribution: >-
+      OWASP Top 10 for Agentic Applications (2026), OWASP GenAI Security Project Agentic Security
+      Initiative, used under CC BY-SA 4.0. OWASP and the OWASP logo are trademarks of the OWASP
+      Foundation, Inc.
+    retrieved: 2026-07-24
+    verified: true
+    note: >-
+      All ten ASI01-ASI10 title strings confirmed verbatim against the canonical primary document
+      "OWASP Top 10 For Agentic Applications 2026", Version 2026, December 2025
+      (genai.owasp.org/download/52117), by extracting the PDF text and reading the section headings
+      and executive-summary list directly. Two prior transcriptions from the announcement post were
+      corrected: ASI02 "Tool Misuse" -> "Tool Misuse and Exploitation"; ASI03 "Identity & Privilege
+      Abuse" -> "Identity and Privilege Abuse" (the doc uses "&" only in cross-references). The other
+      eight matched exactly, including the "(RCE)" in ASI05. Unrelated:
+      github.com/precize/OWASP-Agentic-AI is an UNOFFICIAL project with a different AAI0xx scheme —
+      not this list.
+
+  - key: llmsvs
+    name: OWASP Large Language Model Security Verification Standard
+    version: "2.0"
+    url: https://github.com/OWASP/www-project-llm-verification-standard
+    license: CC BY-SA 4.0
+    attribution: >-
+      OWASP Large Language Model Security Verification Standard (LLMSVS) v2.0, Copyright (c)
+      2008-2026 The OWASP Foundation, used under CC BY-SA 4.0.
+    retrieved: 2026-07-20
+    verified: true
+    note: >-
+      Transcribed from LLMSVS-v2.0-en.md on branch main, whose front matter declares status=release,
+      version=2.0, year=2026. The repo README separately says v2.0 "is set to release on June 15th"
+      without a year and calls main the bleeding-edge branch, so the exact release DAY is unconfirmed;
+      the ids, requirement text, chapter structure, and license all come straight from the fetched
+      document. Related standard OWASP AISVS (github.com/OWASP/AISVS, v1.0 LOCKED, chapters C1-C12,
+      citation form v1.0-C9.4.3) is deliberately not vendored yet.
+
+  - key: atlas
+    name: MITRE ATLAS
+    version: "2026.06"
+    url: https://atlas.mitre.org/
+    license: Apache-2.0
+    attribution: >-
+      MITRE ATLAS(TM) (Adversarial Threat Landscape for AI Systems), https://atlas.mitre.org/.
+      (c) 2026 The MITRE Corporation. ALL RIGHTS RESERVED. Approved for Public Release; Distribution
+      Unlimited. Public Release Case Number 26-1162. Licensed under the Apache License, Version 2.0.
+    retrieved: 2026-07-20
+    verified: true
+    note: >-
+      Machine-parsed with PyYAML from dist/v6/ATLAS-2026.06.yaml in github.com/mitre-atlas/atlas-data
+      (collection.version 2026.06, format-version 6.0.0): 16 tactics, 173 techniques (103 parent +
+      70 sub). REFRESH PATH WARNING: dist/ATLAS.yaml is DEPRECATED and no longer updated; use
+      dist/v6/ATLAS-latest.yaml, which is a pointer to the current dated file. ATLAS is a MITRE
+      trademark — preserve the "MITRE ATLAS(TM)" naming when citing.
+
+  - key: aidefend
+    name: AIDEFEND (AI Defense Framework)
+    version: "2026.07.04"
+    url: https://aidefend.net
+    license: CC BY 4.0
+    attribution: >-
+      AIDEFEND (AI Defense Framework), Edward Lee, https://aidefend.net, licensed CC BY 4.0. An
+      independent personal project — NOT affiliated with or endorsed by MITRE, OWASP, CSA, NIST,
+      Google, Cisco, or Databricks, despite cross-referencing their frameworks.
+    retrieved: 2026-07-20
+    verified: true
+    note: >-
+      From data/data.json in github.com/edward-playground/aidefense-framework (schemaVersion 2.0,
+      dataVersion 2026.07.04): 88 top-level countermeasures across 7 tactics, plus 218 sub-techniques
+      not vendored here. LICENSE CAVEAT: the repo has no LICENSE file (GitHub's detector reports
+      none); CC BY 4.0 is stated in the README only. The affiliation disclaimer in the attribution is
+      load-bearing — AIDEFEND cross-maps to ATLAS and OWASP, so citing it carelessly could imply an
+      endorsement that its own README explicitly disclaims.

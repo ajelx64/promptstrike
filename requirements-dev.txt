@@ -1,0 +1,8 @@
+-r requirements.txt
+pytest>=8
+pytest-asyncio>=0.23
+ruff>=0.6
+# tests/test_tui.py imports textual at module scope; without it the WHOLE suite fails to
+# collect, not just the TUI tests. Deliberately not guarded with importorskip - that would let
+# the no-target-traffic hard-gate tests silently skip.
+textual>=0.80

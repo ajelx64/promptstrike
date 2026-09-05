@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body { font-family: Arial, sans-serif; font-size: 11pt; color: #222; margin: 40px; }
+  h1 { color: #1a237e; border-bottom: 2px solid #1a237e; padding-bottom: 8px; }
+  h2 { color: #283593; border-bottom: 1px solid #c5cae9; padding-bottom: 4px; margin-top: 22px; }
+  h3 { color: #303f9f; margin-top: 16px; }
+  table.meta { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  table.meta th { background: #1a237e; color: white; padding: 6px 10px; text-align: left; width: 150px; font-size: 10pt; }
+  table.meta td { padding: 5px 10px; border-bottom: 1px solid #e8eaf6; font-size: 10pt; }
+  /* Severity CSS reused from an earlier internal report template. */
+  .severity-critical { color: #b71c1c; font-weight: bold; }
+  .severity-high { color: #e65100; font-weight: bold; }
+  .severity-medium { color: #f57f17; }
+  .severity-low { color: #388e3c; }
+  .severity-info { color: #607d8b; }
+  pre { background: #f5f5f5; padding: 8px; border: 1px solid #e0e0e0; white-space: pre-wrap; word-wrap: break-word; font-size: 9pt; }
+  .cover { text-align: center; margin-bottom: 32px; }
+  .cover h1 { font-size: 22pt; border: none; }
+  .cover .subtitle { font-size: 13pt; color: #555; }
+  .cover .date { color: #888; margin-top: 6px; }
+  .section { page-break-inside: avoid; }
+  .provenance { color: #444; font-size: 0.9em; border-left: 3px solid #bbb; padding-left: 8px; }
+    .empty { color: #888; font-style: italic; }
+  ul.checklist { list-style: none; padding-left: 0; }
+  ul.checklist li { font-family: monospace; font-size: 10pt; }
+  .footer { margin-top: 28px; border-top: 1px solid #ccc; padding-top: 8px; color: #888; font-size: 9pt; }
+</style>
+</head>
+<body>
+<div class="cover">
+  <h1>{{ report_title }}</h1>
+  <div class="subtitle">{{ finding.program }} &mdash; {{ profile.display_name }}</div>
+  <div class="date">Generated: {{ generated_date }}</div>
+</div>
+{% block content %}{% endblock %}
+<div class="footer">Authorized security testing. {{ compliance_note }}</div>
+</body>
+</html>

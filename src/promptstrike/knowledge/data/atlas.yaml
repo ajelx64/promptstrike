@@ -1,0 +1,206 @@
+# MITRE ATLAS(TM) — Adversarial Threat Landscape for AI Systems. Content version 2026.06.
+# Source + license recorded in MANIFEST.yaml under key `atlas`.
+#
+# 16 tactics and 173 techniques (103 parent + 70 sub-techniques). Sub-techniques carry `parent`.
+# `tactics` lists the tactic ids a technique achieves; a technique may serve several.
+#
+# PATH NOTE for future refreshes: `dist/ATLAS.yaml` is DEPRECATED and no longer updated. The live
+# distribution is `dist/v6/ATLAS-<version>.yaml`; `dist/v6/ATLAS-latest.yaml` is a pointer file.
+#
+# The 16 tactics are vendored as entries too (chapter: tactic, ids AML.TA*), so a technique's
+# `tactics` list resolves to something with a title instead of rendering as a bare id in a report.
+# The loader validates every `tactics` reference against these.
+
+entries:
+  # --- Tactics (16), in matrix order ---
+  - {id: AML.TA0002, chapter: tactic, title: Reconnaissance}
+  - {id: AML.TA0003, chapter: tactic, title: Resource Development}
+  - {id: AML.TA0004, chapter: tactic, title: Initial Access}
+  - {id: AML.TA0000, chapter: tactic, title: AI Model Access}
+  - {id: AML.TA0005, chapter: tactic, title: Execution}
+  - {id: AML.TA0006, chapter: tactic, title: Persistence}
+  - {id: AML.TA0012, chapter: tactic, title: Privilege Escalation}
+  - {id: AML.TA0007, chapter: tactic, title: Defense Evasion}
+  - {id: AML.TA0013, chapter: tactic, title: Credential Access}
+  - {id: AML.TA0008, chapter: tactic, title: Discovery}
+  - {id: AML.TA0015, chapter: tactic, title: Lateral Movement}
+  - {id: AML.TA0009, chapter: tactic, title: Collection}
+  - {id: AML.TA0001, chapter: tactic, title: AI Attack Staging}
+  - {id: AML.TA0014, chapter: tactic, title: Command and Control}
+  - {id: AML.TA0010, chapter: tactic, title: Exfiltration}
+  - {id: AML.TA0011, chapter: tactic, title: Impact}
+
+  # --- Techniques (173: 103 parent + 70 sub) ---
+  - {id: AML.T0000, title: Search Open Technical Databases, tactics: [AML.TA0002], description: "Search public research and technical documentation to learn how and where AI is used by a victim."}
+  - {id: AML.T0000.000, parent: AML.T0000, title: Journals and Conference Proceedings, tactics: [AML.TA0002]}
+  - {id: AML.T0000.001, parent: AML.T0000, title: Pre-Print Repositories, tactics: [AML.TA0002]}
+  - {id: AML.T0000.002, parent: AML.T0000, title: Technical Blogs, tactics: [AML.TA0002]}
+  - {id: AML.T0001, title: Search Open AI Vulnerability Analysis, tactics: [AML.TA0002], description: "Use published research on vulnerabilities of common AI models."}
+  - {id: AML.T0002, title: Acquire Public AI Artifacts, tactics: [AML.TA0003], description: "Collect publicly available AI artifacts from cloud storage, services, or repositories."}
+  - {id: AML.T0002.000, parent: AML.T0002, title: Datasets, tactics: [AML.TA0003]}
+  - {id: AML.T0002.001, parent: AML.T0002, title: Models, tactics: [AML.TA0003]}
+  - {id: AML.T0002.002, parent: AML.T0002, title: AI Agent Configuration, tactics: [AML.TA0003], description: "Acquire publicly accessible agent config to learn capabilities, tools, or credentials."}
+  - {id: AML.T0003, title: Search Victim-Owned Websites, tactics: [AML.TA0002]}
+  - {id: AML.T0004, title: Search Application Repositories, tactics: [AML.TA0002]}
+  - {id: AML.T0005, title: Create Proxy AI Model, tactics: [AML.TA0001], description: "Obtain models to serve as proxies for the target model."}
+  - {id: AML.T0005.000, parent: AML.T0005, title: "Train Proxy via Gathered AI Artifacts", tactics: [AML.TA0001]}
+  - {id: AML.T0005.001, parent: AML.T0005, title: "Train Proxy via Replication", tactics: [AML.TA0001]}
+  - {id: AML.T0005.002, parent: AML.T0005, title: "Use Pre-Trained Model", tactics: [AML.TA0001]}
+  - {id: AML.T0006, title: Active Scanning, tactics: [AML.TA0002]}
+  - {id: AML.T0007, title: Discover AI Artifacts, tactics: [AML.TA0008], description: "Search private sources to identify AI artifacts present on the system."}
+  - {id: AML.T0008, title: Acquire Infrastructure, tactics: [AML.TA0003]}
+  - {id: AML.T0008.000, parent: AML.T0008, title: AI Development Workspaces, tactics: [AML.TA0003]}
+  - {id: AML.T0008.001, parent: AML.T0008, title: Consumer Hardware, tactics: [AML.TA0003]}
+  - {id: AML.T0008.002, parent: AML.T0008, title: Domains, tactics: [AML.TA0003]}
+  - {id: AML.T0008.003, parent: AML.T0008, title: Physical Countermeasures, tactics: [AML.TA0003]}
+  - {id: AML.T0008.004, parent: AML.T0008, title: Serverless, tactics: [AML.TA0003]}
+  - {id: AML.T0008.005, parent: AML.T0008, title: AI Service Proxies, tactics: [AML.TA0003]}
+  - {id: AML.T0010, title: AI Supply Chain Compromise, tactics: [AML.TA0004], description: "Gain initial access by compromising unique portions of the AI supply chain."}
+  - {id: AML.T0010.000, parent: AML.T0010, title: Hardware, tactics: [AML.TA0004]}
+  - {id: AML.T0010.001, parent: AML.T0010, title: AI Software, tactics: [AML.TA0004]}
+  - {id: AML.T0010.002, parent: AML.T0010, title: Data, tactics: [AML.TA0004]}
+  - {id: AML.T0010.003, parent: AML.T0010, title: Model, tactics: [AML.TA0004]}
+  - {id: AML.T0010.004, parent: AML.T0010, title: Container Registry, tactics: [AML.TA0004]}
+  - {id: AML.T0010.005, parent: AML.T0010, title: AI Agent Tool, tactics: [AML.TA0004]}
+  - {id: AML.T0011, title: User Execution, tactics: [AML.TA0005], description: "Rely on specific user actions to gain execution."}
+  - {id: AML.T0011.000, parent: AML.T0011, title: Unsafe AI Artifacts, tactics: [AML.TA0005]}
+  - {id: AML.T0011.001, parent: AML.T0011, title: Malicious Package, tactics: [AML.TA0005]}
+  - {id: AML.T0011.002, parent: AML.T0011, title: Poisoned AI Agent Tool, tactics: [AML.TA0005]}
+  - {id: AML.T0011.003, parent: AML.T0011, title: Malicious Link, tactics: [AML.TA0005]}
+  - {id: AML.T0012, title: Valid Accounts, tactics: [AML.TA0004, AML.TA0012]}
+  - {id: AML.T0013, title: Discover AI Model Ontology, tactics: [AML.TA0008]}
+  - {id: AML.T0014, title: Discover AI Model Family, tactics: [AML.TA0008]}
+  - {id: AML.T0015, title: Evade AI Model, tactics: [AML.TA0004, AML.TA0007, AML.TA0011], description: "Craft adversarial data so a model misidentifies input, or fool it with deepfakes."}
+  - {id: AML.T0016, title: Obtain Capabilities, tactics: [AML.TA0003]}
+  - {id: AML.T0016.000, parent: AML.T0016, title: Adversarial AI Attack Implementations, tactics: [AML.TA0003]}
+  - {id: AML.T0016.001, parent: AML.T0016, title: Software Tools, tactics: [AML.TA0003]}
+  - {id: AML.T0016.002, parent: AML.T0016, title: Generative AI, tactics: [AML.TA0003]}
+  - {id: AML.T0017, title: Develop Capabilities, tactics: [AML.TA0003]}
+  - {id: AML.T0017.000, parent: AML.T0017, title: Adversarial AI Attacks, tactics: [AML.TA0003]}
+  - {id: AML.T0018, title: Manipulate AI Model, tactics: [AML.TA0001, AML.TA0006], description: "Directly manipulate a model to change behavior or introduce malicious code."}
+  - {id: AML.T0018.000, parent: AML.T0018, title: Poison AI Model, tactics: [AML.TA0001, AML.TA0006]}
+  - {id: AML.T0018.001, parent: AML.T0018, title: Modify AI Model Architecture, tactics: [AML.TA0001, AML.TA0006]}
+  - {id: AML.T0018.002, parent: AML.T0018, title: Embed Malware, tactics: [AML.TA0001, AML.TA0006]}
+  - {id: AML.T0019, title: Publish Poisoned Datasets, tactics: [AML.TA0003]}
+  - {id: AML.T0020, title: Poison Training Data, tactics: [AML.TA0003, AML.TA0006], description: "Poison datasets used by a model by modifying underlying data or labels."}
+  - {id: AML.T0021, title: Establish Accounts, tactics: [AML.TA0003]}
+  - {id: AML.T0024, title: Exfiltration via AI Inference API, tactics: [AML.TA0010], description: "Exfiltrate private information through legitimate inference API access."}
+  - {id: AML.T0024.000, parent: AML.T0024, title: Infer Training Data Membership, tactics: [AML.TA0010]}
+  - {id: AML.T0024.001, parent: AML.T0024, title: Invert AI Model, tactics: [AML.TA0010]}
+  - {id: AML.T0024.002, parent: AML.T0024, title: Extract AI Model, tactics: [AML.TA0010]}
+  - {id: AML.T0025, title: Exfiltration via Cyber Means, tactics: [AML.TA0010]}
+  - {id: AML.T0029, title: Denial of AI Service, tactics: [AML.TA0011], description: "Flood an AI system with requests to degrade or shut down the service."}
+  - {id: AML.T0031, title: Erode AI Model Integrity, tactics: [AML.TA0011], description: "Degrade model performance with adversarial inputs to erode confidence over time."}
+  - {id: AML.T0034, title: Cost Harvesting, tactics: [AML.TA0011], description: "Drive AI services beyond normal capacity to increase the victim's operating cost."}
+  - {id: AML.T0034.000, parent: AML.T0034, title: Excessive Queries, tactics: [AML.TA0011]}
+  - {id: AML.T0034.001, parent: AML.T0034, title: Resource-Intensive Queries, tactics: [AML.TA0011]}
+  - {id: AML.T0034.002, parent: AML.T0034, title: Agentic Resource Consumption, tactics: [AML.TA0011]}
+  - {id: AML.T0035, title: AI Artifact Collection, tactics: [AML.TA0009]}
+  - {id: AML.T0036, title: Data from Information Repositories, tactics: [AML.TA0009]}
+  - {id: AML.T0037, title: Data from Local System, tactics: [AML.TA0009]}
+  - {id: AML.T0040, title: AI Model Inference API Access, tactics: [AML.TA0000]}
+  - {id: AML.T0041, title: Physical Environment Access, tactics: [AML.TA0000]}
+  - {id: AML.T0042, title: Verify Attack, tactics: [AML.TA0001]}
+  - {id: AML.T0043, title: Craft Adversarial Data, tactics: [AML.TA0001], description: "Modify inputs so they cause the adversary's desired effect in the target model."}
+  - {id: AML.T0043.000, parent: AML.T0043, title: White-Box Optimization, tactics: [AML.TA0001]}
+  - {id: AML.T0043.001, parent: AML.T0043, title: Black-Box Optimization, tactics: [AML.TA0001]}
+  - {id: AML.T0043.002, parent: AML.T0043, title: Black-Box Transfer, tactics: [AML.TA0001]}
+  - {id: AML.T0043.003, parent: AML.T0043, title: Manual Modification, tactics: [AML.TA0001]}
+  - {id: AML.T0043.004, parent: AML.T0043, title: Insert Backdoor Trigger, tactics: [AML.TA0001]}
+  - {id: AML.T0044, title: Full AI Model Access, tactics: [AML.TA0000]}
+  - {id: AML.T0046, title: Spamming AI System with Chaff Data, tactics: [AML.TA0011]}
+  - {id: AML.T0047, title: AI-Enabled Product or Service, tactics: [AML.TA0000]}
+  - {id: AML.T0048, title: External Harms, tactics: [AML.TA0011], description: "Abuse access to a victim system to cause harms external to that system."}
+  - {id: AML.T0048.000, parent: AML.T0048, title: Financial Harm, tactics: [AML.TA0011]}
+  - {id: AML.T0048.001, parent: AML.T0048, title: Reputational Harm, tactics: [AML.TA0011]}
+  - {id: AML.T0048.002, parent: AML.T0048, title: Societal Harm, tactics: [AML.TA0011]}
+  - {id: AML.T0048.003, parent: AML.T0048, title: User Harm, tactics: [AML.TA0011]}
+  - {id: AML.T0048.004, parent: AML.T0048, title: AI Intellectual Property Theft, tactics: [AML.TA0011]}
+  - {id: AML.T0049, title: Exploit Public-Facing Application, tactics: [AML.TA0004]}
+  - {id: AML.T0050, title: Command and Scripting Interpreter, tactics: [AML.TA0005]}
+  - {id: AML.T0051, title: LLM Prompt Injection, tactics: [AML.TA0005], description: "Craft malicious prompts that cause the LLM to act in unintended ways."}
+  - {id: AML.T0051.000, parent: AML.T0051, title: Direct, tactics: [AML.TA0005], description: "Inject prompts directly as a user of the LLM."}
+  - {id: AML.T0051.001, parent: AML.T0051, title: Indirect, tactics: [AML.TA0005], description: "Inject prompts via a separate data channel the LLM ingests, such as retrieved web or database text."}
+  - {id: AML.T0051.002, parent: AML.T0051, title: Triggered, tactics: [AML.TA0005], description: "Trigger an injection via a user action or event in the victim environment."}
+  - {id: AML.T0052, title: Phishing, tactics: [AML.TA0004, AML.TA0015]}
+  - {id: AML.T0052.000, parent: AML.T0052, title: "Spearphishing via Social Engineering LLM", tactics: [AML.TA0004, AML.TA0015]}
+  - {id: AML.T0052.001, parent: AML.T0052, title: Deepfake-Assisted Phishing, tactics: [AML.TA0004, AML.TA0015]}
+  - {id: AML.T0053, title: AI Agent Tool Invocation, tactics: [AML.TA0005, AML.TA0012], description: "Use access to an AI agent to invoke the tools it can reach."}
+  - {id: AML.T0054, title: LLM Jailbreak, tactics: [AML.TA0007, AML.TA0012], description: "Induce an LLM to circumvent or override its safety behaviors and guardrails."}
+  - {id: AML.T0055, title: Unsecured Credentials, tactics: [AML.TA0013]}
+  - {id: AML.T0056, title: Extract LLM System Prompt, tactics: [AML.TA0010]}
+  - {id: AML.T0057, title: LLM Data Leakage, tactics: [AML.TA0010], description: "Craft prompts that induce the LLM to leak sensitive information."}
+  - {id: AML.T0058, title: Publish Poisoned Models, tactics: [AML.TA0003]}
+  - {id: AML.T0059, title: Erode Dataset Integrity, tactics: [AML.TA0011]}
+  - {id: AML.T0060, title: Publish Hallucinated Entities, tactics: [AML.TA0003], description: "Create an entity matching something an LLM hallucinates, such as a package name."}
+  - {id: AML.T0061, title: LLM Prompt Self-Replication, tactics: [AML.TA0006]}
+  - {id: AML.T0062, title: Discover LLM Hallucinations, tactics: [AML.TA0008]}
+  - {id: AML.T0063, title: Discover AI Model Outputs, tactics: [AML.TA0008]}
+  - {id: AML.T0064, title: Gather RAG-Indexed Targets, tactics: [AML.TA0002]}
+  - {id: AML.T0065, title: LLM Prompt Crafting, tactics: [AML.TA0003]}
+  - {id: AML.T0066, title: Retrieval Content Crafting, tactics: [AML.TA0003]}
+  - {id: AML.T0067, title: LLM Trusted Output Components Manipulation, tactics: [AML.TA0007], description: "Manipulate response components to make output appear trustworthy."}
+  - {id: AML.T0067.000, parent: AML.T0067, title: Citations, tactics: [AML.TA0007]}
+  - {id: AML.T0068, title: LLM Prompt Obfuscation, tactics: [AML.TA0007]}
+  - {id: AML.T0069, title: Discover LLM System Information, tactics: [AML.TA0008]}
+  - {id: AML.T0069.000, parent: AML.T0069, title: Special Character Sets, tactics: [AML.TA0008]}
+  - {id: AML.T0069.001, parent: AML.T0069, title: System Instruction Keywords, tactics: [AML.TA0008]}
+  - {id: AML.T0069.002, parent: AML.T0069, title: System Prompt, tactics: [AML.TA0008]}
+  - {id: AML.T0070, title: RAG Poisoning, tactics: [AML.TA0006], description: "Inject malicious content into data indexed by a RAG system."}
+  - {id: AML.T0071, title: False RAG Entry Injection, tactics: [AML.TA0007]}
+  - {id: AML.T0072, title: Reverse Shell, tactics: [AML.TA0014]}
+  - {id: AML.T0073, title: Impersonation, tactics: [AML.TA0007]}
+  - {id: AML.T0074, title: Masquerading, tactics: [AML.TA0007]}
+  - {id: AML.T0075, title: Cloud Service Discovery, tactics: [AML.TA0008]}
+  - {id: AML.T0076, title: Corrupt AI Model, tactics: [AML.TA0007]}
+  - {id: AML.T0077, title: LLM Response Rendering, tactics: [AML.TA0010], description: "Elicit private information hidden from the user when the client renders the response."}
+  - {id: AML.T0078, title: Drive-by Compromise, tactics: [AML.TA0004]}
+  - {id: AML.T0079, title: Stage Capabilities, tactics: [AML.TA0003]}
+  - {id: AML.T0080, title: AI Agent Context Poisoning, tactics: [AML.TA0006], description: "Manipulate the context an agent's LLM uses to influence its responses or actions."}
+  - {id: AML.T0080.000, parent: AML.T0080, title: Memory, tactics: [AML.TA0006]}
+  - {id: AML.T0080.001, parent: AML.T0080, title: Thread, tactics: [AML.TA0006]}
+  - {id: AML.T0081, title: Modify AI Agent Configuration, tactics: [AML.TA0006, AML.TA0007]}
+  - {id: AML.T0082, title: RAG Credential Harvesting, tactics: [AML.TA0013]}
+  - {id: AML.T0083, title: Credentials from AI Agent Configuration, tactics: [AML.TA0013]}
+  - {id: AML.T0084, title: Discover AI Agent Configuration, tactics: [AML.TA0008]}
+  - {id: AML.T0084.000, parent: AML.T0084, title: Embedded Knowledge, tactics: [AML.TA0008]}
+  - {id: AML.T0084.001, parent: AML.T0084, title: Tool Definitions, tactics: [AML.TA0008]}
+  - {id: AML.T0084.002, parent: AML.T0084, title: Activation Triggers, tactics: [AML.TA0008]}
+  - {id: AML.T0084.003, parent: AML.T0084, title: Call Chains, tactics: [AML.TA0008]}
+  - {id: AML.T0085, title: Data from AI Services, tactics: [AML.TA0009]}
+  - {id: AML.T0085.000, parent: AML.T0085, title: RAG Databases, tactics: [AML.TA0009]}
+  - {id: AML.T0085.001, parent: AML.T0085, title: AI Agent Tools, tactics: [AML.TA0009]}
+  - {id: AML.T0086, title: Exfiltration via AI Agent Tool Invocation, tactics: [AML.TA0010]}
+  - {id: AML.T0087, title: Gather Victim Identity Information, tactics: [AML.TA0002]}
+  - {id: AML.T0088, title: Generate Deepfakes, tactics: [AML.TA0001]}
+  - {id: AML.T0089, title: Process Discovery, tactics: [AML.TA0008]}
+  - {id: AML.T0090, title: OS Credential Dumping, tactics: [AML.TA0013]}
+  - {id: AML.T0091, title: Use Alternate Authentication Material, tactics: [AML.TA0015]}
+  - {id: AML.T0091.000, parent: AML.T0091, title: Application Access Token, tactics: [AML.TA0015]}
+  - {id: AML.T0091.001, parent: AML.T0091, title: Web Session Cookie, tactics: [AML.TA0015]}
+  - {id: AML.T0092, title: Manipulate User LLM Chat History, tactics: [AML.TA0007]}
+  - {id: AML.T0093, title: Prompt Infiltration via Public-Facing Application, tactics: [AML.TA0004, AML.TA0006]}
+  - {id: AML.T0094, title: Delay Execution of LLM Instructions, tactics: [AML.TA0007]}
+  - {id: AML.T0095, title: Search Open Websites/Domains, tactics: [AML.TA0002]}
+  - {id: AML.T0095.000, parent: AML.T0095, title: Code Repositories, tactics: [AML.TA0002]}
+  - {id: AML.T0096, title: AI Service API, tactics: [AML.TA0014]}
+  - {id: AML.T0097, title: Virtualization/Sandbox Evasion, tactics: [AML.TA0007]}
+  - {id: AML.T0098, title: AI Agent Tool Credential Harvesting, tactics: [AML.TA0013]}
+  - {id: AML.T0099, title: AI Agent Tool Data Poisoning, tactics: [AML.TA0006]}
+  - {id: AML.T0100, title: AI Agent Clickbait, tactics: [AML.TA0005]}
+  - {id: AML.T0101, title: Data Destruction via AI Agent Tool Invocation, tactics: [AML.TA0011]}
+  - {id: AML.T0102, title: Generate Malicious Commands, tactics: [AML.TA0001]}
+  - {id: AML.T0103, title: Deploy AI Agent, tactics: [AML.TA0005]}
+  - {id: AML.T0104, title: Publish Poisoned AI Agent Tool, tactics: [AML.TA0003]}
+  - {id: AML.T0105, title: Escape to Host, tactics: [AML.TA0012]}
+  - {id: AML.T0106, title: Exploitation for Credential Access, tactics: [AML.TA0013]}
+  - {id: AML.T0107, title: Exploitation for Defense Evasion, tactics: [AML.TA0007]}
+  - {id: AML.T0108, title: AI Agent, tactics: [AML.TA0014]}
+  - {id: AML.T0109, title: AI Supply Chain Rug Pull, tactics: [AML.TA0007]}
+  - {id: AML.T0110, title: AI Agent Tool Poisoning, tactics: [AML.TA0006]}
+  - {id: AML.T0111, title: AI Supply Chain Reputation Inflation, tactics: [AML.TA0007]}
+  - {id: AML.T0112, title: Machine Compromise, tactics: [AML.TA0011]}
+  - {id: AML.T0112.000, parent: AML.T0112, title: Local AI Agent, tactics: [AML.TA0011]}
+  - {id: AML.T0112.001, parent: AML.T0112, title: AI Artifacts, tactics: [AML.TA0011]}
+  - {id: AML.T0113, title: Steal Web Session Cookie, tactics: [AML.TA0013]}
+  - {id: AML.T0114, title: AI Service Web Interface, tactics: [AML.TA0014]}
