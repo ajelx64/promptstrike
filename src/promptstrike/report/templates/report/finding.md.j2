@@ -4,24 +4,24 @@
 - **Severity:** {{ platform_severity }} (CVSS v3.1 {{ finding.cvss_v31_score if finding.cvss_v31_score is not none else 'n/a' }} `{{ finding.cvss_v31_vector }}`)
 - **Category:** {{ finding.category.value }} — {{ owasp_title }}
 - **CWE:** {{ finding.cwe | join(', ') }}
-- **Target:** {{ finding.target }}
+- **Target:** {{ finding.target | md_escape }}
 - **Model:** {{ finding.model | md_escape }} {{ finding.model_version | md_escape }}
 - **Generated:** {{ generated_date }}
 
 ## Summary
-{{ finding.summary or '_(to be completed)_' }}
+{{ (finding.summary | md_escape) or '_(to be completed)_' }}
 
 ## Description
-{{ finding.description }}
+{{ finding.description | md_escape }}
 
 ## Steps to Reproduce
 {% for step in finding.steps_to_reproduce %}{{ loop.index }}. {{ step | md_escape }}
 {% endfor %}
 ## Impact
-{{ finding.impact or '_(to be completed)_' }}
+{{ (finding.impact | md_escape) or '_(to be completed)_' }}
 
 ## Remediation
-{{ finding.remediation or '_(to be completed)_' }}
+{{ (finding.remediation | md_escape) or '_(to be completed)_' }}
 
 ## Evidence
 {% for ev in finding.evidence %}

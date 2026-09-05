@@ -12,7 +12,7 @@ from pathlib import Path
 
 import yaml
 
-from promptstrike.llm.target import TargetClient
+from promptstrike.llm.target import TargetClient, redact_target
 from promptstrike.models import Evidence, Probe, ProbeResult
 from promptstrike.probes.detectors import run_detector
 
@@ -97,7 +97,10 @@ async def run_probe(
         run_id=run_id,
         probe_id=probe.id,
         program=client.program.name,
-        target=target,
+        # Redacted here because RunStore writes this straight to <run_id>.json, and the
+        # evidence directory is durable - it is the directory an operator is most likely to
+        # archive or attach. Every other consumer of a target redacts; this path did not.
+        target=redact_target(target),
         category=probe.category,
         triggered=triggered,
         detector=probe.detector,

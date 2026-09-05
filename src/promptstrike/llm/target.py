@@ -112,10 +112,33 @@ _SECRET_VALUE_PREFIXES = (
 )
 
 
+# Percent-decoding passes, matching the scope canonicalizer. One pass was not enough: a
+# double-encoded "%2573k-" decodes to "%73k-" and only then to "sk-", so a single decode left
+# the prefix check comparing a string the server would resolve differently.
+_MAX_DECODE_PASSES = 3
+
+
+def _fully_decode(value: str) -> str:
+    """Percent-decode until the value stops changing, bounded by the pass cap."""
+    # Track across passes so we can stop as soon as decoding is a no-op.
+    decoded = value
+    for _ in range(_MAX_DECODE_PASSES):
+        once = unquote(decoded)
+        if once == decoded:
+            break
+        decoded = once
+    return decoded
+
+
 def _looks_like_secret(value: str) -> bool:
-    """True when a value carries a recognisable credential prefix."""
+    """True when a value carries a recognisable credential prefix.
+
+    Decodes first: the query half was decoded before matching while the path half was not, so a
+    percent-encoded "sk-" in a path segment sailed straight through a check that would have
+    caught the identical plain value.
+    """
     # Compare lower-cased so AKIA/akia and eyJ/eyj both match.
-    lowered = value.lower()
+    lowered = _fully_decode(value).lower()
     # Any known issuer prefix is treated as a credential wherever it appears.
     return any(lowered.startswith(prefix) for prefix in _SECRET_VALUE_PREFIXES)
 
@@ -170,7 +193,12 @@ def redact_target(target: str) -> str:
     fragment = _redact_parameter_bag(parts.fragment)
     # Reassemble, then drop the placeholder scheme if we added one.
     rebuilt = urlunsplit((parts.scheme, netloc, path, query, fragment))
-    return rebuilt if had_scheme else rebuilt.removeprefix("placeholder://")
+    # urlunsplit omits the "//" when the netloc is empty, so a target with no authority
+    # ("/v1/chat") came back as "placeholder:/v1/chat" - a fabricated scheme written into the
+    # safe-harbor log. Strip either spelling.
+    if had_scheme:
+        return rebuilt
+    return rebuilt.removeprefix("placeholder://").removeprefix("placeholder:")
 
 
 def _redact_parameter_bag(raw: str) -> str:
@@ -194,8 +222,8 @@ def _redact_parameter_bag(raw: str) -> str:
             continue
         # Percent-decode BOTH halves before matching. Comparing the raw text let "%74oken=" hide
         # a secret-bearing name and "%73%6b-" hide a secret-bearing value.
-        decoded_name = unquote(name).lower()
-        decoded_value = unquote(value)
+        decoded_name = _fully_decode(name).lower()
+        decoded_value = _fully_decode(value)
         # Redact when the NAME looks credential-bearing, or the VALUE carries a known prefix.
         if any(marker in decoded_name for marker in _SECRET_QUERY_KEYS) or _looks_like_secret(
             decoded_value

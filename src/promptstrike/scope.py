@@ -65,10 +65,15 @@ def _split_target(target: str) -> tuple[str | None, str, str]:
     if "/" in raw:
         # partition on the FIRST slash so the path keeps any further slashes intact.
         host, _, path = raw.partition("/")
+        # Strip userinfo, as the scheme-ful branch already does via urlparse.hostname. Without
+        # it "x@internal.example.com" still ends in ".example.com" and matched a domain asset
+        # that the bare hostname had been carved out of.
+        host = host.rsplit("@", 1)[-1]
         # An empty host becomes None so host/domain rules see "no host" rather than "".
         return (host.lower() or None), "/" + path, raw
-    # Bare token: a hostname or a model id, with no path to speak of.
-    return raw.lower(), "", raw
+    # Bare token: a hostname or a model id, with no path to speak of. Userinfo is stripped for
+    # the same reason as the branch above; a model id never contains "@" so this is inert there.
+    return raw.rsplit("@", 1)[-1].lower(), "", raw
 
 
 # Ports that carry no meaning because they are the scheme's default; "example.com:443" and
@@ -121,6 +126,62 @@ def _remove_dot_segments(path: str) -> str:
         resolved.append(segment)
     # Join without a leading slash - the caller re-adds one when the path is non-empty.
     return "/".join(resolved)
+
+
+# Path shapes a client cannot reduce to one form, because a server may treat them as equal to
+# something else. These are the documented Windows/IIS path-equivalence classes; a backslash is
+# a separator there, trailing dots and spaces are stripped, and "::" introduces an NTFS alternate
+# data stream. Control characters are refused outright because no legitimate target needs one.
+#
+# Honest limit: server-side path equivalence cannot be fully modelled from the client. This
+# refuses the known classes rather than claiming to catch every one - which is why the endpoint
+# comparison ALSO stays strict, and why a carve-out should name a host or domain when the exact
+# path spelling matters.
+def _reject_uncanonicalizable_path(path: str, original: str) -> None:
+    """Raise ``ValueError`` if ``path`` contains a construct we cannot canonicalize."""
+    # A backslash is a path separator on Windows servers, so "/v1/admin\\x" can resolve to
+    # "/v1/admin" - which walks straight around a carve-out spelled the ordinary way.
+    if "\\" in path:
+        raise ValueError(f"backslash in path of {original!r}")
+    # Any control character (including tab and newline) is refused; nothing legitimate needs one
+    # and several servers strip them before routing.
+    if any(character < " " or character == "\x7f" for character in path):
+        raise ValueError(f"control character in path of {original!r}")
+    # "::" introduces an NTFS alternate data stream ("/v1/admin::$DATA" reads as "/v1/admin").
+    if "::" in path:
+        raise ValueError(f"alternate-data-stream marker in path of {original!r}")
+    # A segment with a trailing dot or space is stripped by Windows servers, so it is a second
+    # spelling of the segment without it.
+    for segment in path.split("/"):
+        if segment != segment.rstrip(". "):
+            raise ValueError(f"trailing dot or space in path segment of {original!r}")
+
+
+def _canonical_hostname(value: str, original: str) -> str:
+    """Reduce a ``host`` or ``domain`` asset value to a bare hostname, or refuse it.
+
+    The host and domain branches previously compared ``_split_target``'s raw output with no
+    canonicalizer and no refusal, so a malformed carve-out - a port or scheme accidentally
+    transcribed onto a ``type: host`` asset, the single most likely YAML mistake - matched
+    nothing at all and evaporated silently while a broad in-scope domain authorized the host it
+    was meant to exclude. An unusable asset must deny loudly instead.
+    """
+    # A scheme means the operator wrote a URL where a hostname belongs.
+    if "://" in value:
+        raise ValueError(f"{original!r} is a URL, not a hostname - use type: endpoint")
+    # A path likewise.
+    if "/" in value:
+        raise ValueError(f"{original!r} contains a path - use type: endpoint")
+    # A port is not part of a hostname, and silently ignoring it is how a carve-out goes inert.
+    if ":" in value:
+        raise ValueError(f"{original!r} contains a port - a host asset is the bare name")
+    # A leading or trailing dot is a second spelling of the same name.
+    if value != value.strip("."):
+        raise ValueError(f"{original!r} has a leading or trailing dot")
+    # Whitespace is never part of a hostname.
+    if any(character.isspace() for character in value):
+        raise ValueError(f"{original!r} contains whitespace")
+    return value
 
 
 def _norm_endpoint(value: str) -> str:
@@ -213,6 +274,12 @@ def _norm_endpoint(value: str) -> str:
     path = "/".join(segment.split(";", 1)[0] for segment in path.split("/"))
     # Resolve dot-segments and collapse duplicate slashes.
     path = _remove_dot_segments(path)
+    # REFUSE a path this function cannot reduce to one form, for the same reason the authority
+    # above is refused. Normalizing four known constructs and passing everything else through
+    # unchanged is fail-open, and on a carve-out fail-open means traffic goes where a program
+    # forbade it. Checked AFTER dot-resolution so legitimate "." and ".." segments - which this
+    # function exists to resolve - are not mistaken for trailing-dot junk.
+    _reject_uncanonicalizable_path(path, value)
     # Re-assemble; the path is empty for a bare host, in which case no slash is added.
     canonical = authority + ("/" + path if path else "")
     # Drop any trailing slash so "/v1/" and "/v1" are the same asset.
@@ -248,12 +315,16 @@ def asset_matches(asset: ScopeAsset, target: str) -> bool:
     # A host asset matches one exact hostname - no subdomains, which is what makes it narrower
     # than a domain asset.
     if asset.type == AssetType.host:
+        # Refuse a malformed host asset rather than letting it match nothing.
+        asset_value = _canonical_hostname(asset_value, asset.value)
         # When the target parsed as a URL compare its host; otherwise the target IS the hostname.
         return host == asset_value if host else raw.strip().lower() == asset_value
 
     # A domain asset is the only wildcard-capable type, so its boundary handling is what keeps
     # scope from silently widening.
     if asset.type == AssetType.domain:
+        # Same contract as host, after removing the wildcard marker the grammar allows here.
+        _canonical_hostname(asset_value.removeprefix("*."), asset.value)
         # An explicit "*." prefix means subdomains ONLY. Bug-bounty scope grammars treat the apex
         # as a separate asset that is frequently excluded, so letting the wildcard cover it would
         # silently widen scope inside the deny-by-default control.
