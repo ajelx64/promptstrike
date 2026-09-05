@@ -1,0 +1,142 @@
+# Continuous integration for promptstrike.
+#
+# This exists because of a specific class of defect: every install in this project's own docs is
+# `pip install -e .`, and pytest.ini sets `pythonpath = src`, so locally the SOURCE TREE is always
+# what gets read. A file missing from the built wheel, or a Python-version claim that is false, is
+# therefore invisible to the author and breaks only for strangers. The `wheel` job below is the
+# one that catches that.
+name: CI
+
+# Run on pushes to the default branch and on every pull request targeting it.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Read-only token: nothing here needs to write to the repository.
+permissions:
+  contents: read
+
+jobs:
+  # -------------------------------------------------------------------------------------------
+  # Tests and lint, across the Python versions the package claims to support.
+  # -------------------------------------------------------------------------------------------
+  test:
+    # Name each matrix leg by its OS and version so a failure is identifiable at a glance.
+    name: test (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # Run every leg even when one fails - knowing whether a break is version-specific or
+      # universal is most of the diagnosis.
+      fail-fast: false
+      matrix:
+        # Ubuntu is the cheapest signal; Windows is the platform this is developed on and the
+        # one whose path handling most often differs.
+        os: [ubuntu-latest, windows-latest]
+        # 3.11 is the floor declared by requires-python; 3.13 is current. Testing the floor is
+        # the point - the claim was previously untested because only 3.13 existed locally.
+        python-version: ["3.11", "3.13"]
+    steps:
+      # Check out the repository at the commit under test.
+      - uses: actions/checkout@v4
+
+      # Install the interpreter for this matrix leg.
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          # Cache pip downloads keyed on the requirements files, so reruns are fast.
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      # Runtime plus test dependencies. The package itself is installed editable, matching the
+      # documented developer setup.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-dev.txt
+          python -m pip install -e .
+
+      # Lint first: it is fast, and a lint failure is cheaper to read than a test failure.
+      - name: Lint
+        run: python -m ruff check .
+
+      # The suite itself. No network access is required - the transport, the rate limiter's clock
+      # and its sleep are all injectable.
+      - name: Tests
+        run: python -m pytest -q
+
+  # -------------------------------------------------------------------------------------------
+  # Build the wheel and use it the way a stranger would. This is the job that would have caught
+  # the Markdown template being absent from package-data.
+  # -------------------------------------------------------------------------------------------
+  wheel:
+    name: wheel install + render every format
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the repository.
+      - uses: actions/checkout@v4
+
+      # A single current interpreter is enough; this job tests packaging, not version support.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      # Build a real wheel from the source tree.
+      - name: Build wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel
+
+      # Install ONLY the built wheel into a clean environment - deliberately not editable, and
+      # deliberately not from the source tree, so anything missing from the wheel actually fails.
+      - name: Install the built wheel
+        run: python -m pip install dist/*.whl
+
+      # Render each output format from a directory that is NOT the repository, so an accidental
+      # relative-path read of the source tree cannot rescue a missing packaged file.
+      - name: Render every report format from the installed package
+        run: |
+          cd /tmp
+          python -c "
+          from promptstrike.models import Finding, Platform
+          from promptstrike.report.generator import ReportGenerator
+          from promptstrike.report.profiles import get_profile
+          from promptstrike.taxonomy import OwaspLLM
+          finding = Finding(program='ci', title='ci', category=OwaspLLM.LLM01,
+                            platform=Platform.google_ai_vrp)
+          generator = ReportGenerator()
+          profile = get_profile(Platform.google_ai_vrp)
+          assert generator.render_markdown(finding, profile), 'markdown render produced nothing'
+          assert generator.render_html(finding, profile), 'html render produced nothing'
+          print('markdown and html both render from the installed wheel')
+          "
+
+      # The console entry point must also work from an installed wheel.
+      - name: Smoke-test the CLI entry point
+        run: |
+          cd /tmp
+          promptstrike version
+
+  # -------------------------------------------------------------------------------------------
+  # Secret scanning. This repository is public and holds an offensive-security tool; a committed
+  # credential would be found by someone else first.
+  # -------------------------------------------------------------------------------------------
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      # Full history: a secret introduced in an older commit is still a secret.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # gitleaks fails the job on any finding.
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

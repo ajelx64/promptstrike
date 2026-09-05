@@ -43,7 +43,10 @@ where = ["src"]
 [tool.setuptools.package-data]
 promptstrike = [
     "probes/pack/*.yaml",
-    "report/templates/report/*.html",
+    # Every template, not just *.html. An earlier glob listed only *.html, which silently
+    # dropped finding.md.j2 from the wheel - and Markdown is the DEFAULT report format, so a
+    # `pip install` of this package had a broken default path while an editable install worked.
+    "report/templates/report/*",
     # Vendored knowledge pack — public, citable reference data; must ship with the package.
     "knowledge/data/*.yaml",
 ]
