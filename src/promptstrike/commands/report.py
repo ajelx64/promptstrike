@@ -13,12 +13,16 @@ from promptstrike.report.generator import ReportGenerator
 from promptstrike.report.profiles import Profile, get_profile
 from promptstrike.storage import FindingStore
 
+# Sub-app for every `promptstrike report <verb>` command below.
 report_app = typer.Typer(help="Generate platform-native reports from findings.", no_args_is_help=True)
 
 
 def _emit(finding: Finding, profile: Profile, fmt: str, out_dir: Path) -> Path:
+    # One renderer instance handles markdown, HTML, and PDF for this call.
     gen = ReportGenerator()
+    # Make sure the output directory exists before writing into it.
     out_dir.mkdir(parents=True, exist_ok=True)
+    # Filename stem ties the finding id and target platform together, e.g. finding-3-hackerone.
     stem = f"finding-{finding.id}-{profile.key}"
     if fmt == "md":
         path = out_dir / f"{stem}.md"
@@ -27,6 +31,7 @@ def _emit(finding: Finding, profile: Profile, fmt: str, out_dir: Path) -> Path:
         path = out_dir / f"{stem}.html"
         path.write_text(gen.render_html(finding, profile), encoding="utf-8")
     elif fmt == "pdf":
+        # PDF rendering depends on the optional WeasyPrint/GTK stack, so it can return None.
         pdf = gen.render_pdf(finding, profile)
         if pdf is None:  # soft-fail to HTML
             path = out_dir / f"{stem}.html"
@@ -36,6 +41,7 @@ def _emit(finding: Finding, profile: Profile, fmt: str, out_dir: Path) -> Path:
             path = out_dir / f"{stem}.pdf"
             path.write_bytes(pdf)
     else:
+        # Typer surfaces this as a normal CLI usage error, not a stack trace.
         raise typer.BadParameter("format must be one of: md, html, pdf")
     return path
 
@@ -53,30 +59,37 @@ def _draft_with_ai(finding: Finding, store: FindingStore) -> None:
         # Ask the model for narrative fields, then apply them to the in-memory finding.
         apply_narrative(finding, claude_drafter(finding))
     except Exception as exc:  # anthropic missing, no key, API error — never fatal
+        # Report the skip and bail out; the finding keeps whatever narrative it already had.
         typer.secho(f"  AI drafting skipped: {exc}", fg="yellow")
         return
 
     # Show what was generated, so the decision below is informed rather than blind.
     typer.secho("  AI-drafted summary / impact / remediation:", fg="cyan")
+    # Preview each drafted narrative field in turn.
     for field_name in ("summary", "impact", "remediation"):
         # Read the drafted value off the finding.
         value = getattr(finding, field_name, "") or ""
         # Keep the preview short; the full text is in the rendered report.
         preview = " ".join(value.split())[:200]
+        # Print the (possibly truncated) preview for this field.
         typer.echo(f"    {field_name}: {preview}{'...' if len(value) > 200 else ''}")
 
     # Persist only on an explicit yes. A non-interactive run (no TTY) takes the default of NO,
     # which fails closed: the report still contains the draft, the stored finding is untouched.
     if typer.confirm("  Persist this AI-drafted narrative to the stored finding?", default=False):
+        # Operator confirmed: write the AI-drafted narrative into the stored finding.
         store.update(finding)
         typer.secho("  Saved to the finding.", fg="green")
     else:
+        # Operator declined (or non-interactive default): leave the stored finding untouched.
         typer.secho(
             "  Not saved. The rendered report includes the draft; the stored finding is unchanged.",
             fg="yellow",
         )
 
 
+# Options shared by both `draft` and `final`: which finding, which platform profile, which
+# output format, and whether to run the AI narrative drafter.
 @report_app.command("draft")
 def draft(
     finding_id: int = typer.Option(..., "--finding", help="Finding id"),
@@ -87,17 +100,23 @@ def draft(
     """Generate a draft report for a finding."""
     settings = get_settings()
     settings.ensure_dirs()
+    # Keep the store connection open for the whole command so `_draft_with_ai` can update it.
     store = FindingStore(settings.db_path)
     try:
+        # Load the finding this report is for.
         finding = store.get(finding_id)
         if finding is None:
             typer.secho(f"unknown finding #{finding_id}", fg="red")
             raise typer.Exit(code=1)
+        # Resolve the platform-specific report profile (defaults to the finding's own platform).
         profile = get_profile(platform or finding.platform.value)
         if ai:
+            # Draft narrative fields in memory (and maybe persist them, on confirmation).
             _draft_with_ai(finding, store)
+        # Render and write the report file in the requested format.
         path = _emit(finding, profile, fmt, settings.reports_dir)
     finally:
+        # Always close the sqlite3 connection, even if rendering raised.
         store.close()
     typer.secho(f"draft written: {path}", fg="green")
 
@@ -112,25 +131,33 @@ def final(
     """Generate a final report; warns on incomplete fields and marks the finding ready when clean."""
     settings = get_settings()
     settings.ensure_dirs()
+    # Keep the store connection open for the whole command so `_draft_with_ai` can update it.
     store = FindingStore(settings.db_path)
     try:
+        # Load the finding this report is for.
         finding = store.get(finding_id)
         if finding is None:
             typer.secho(f"unknown finding #{finding_id}", fg="red")
             raise typer.Exit(code=1)
+        # Resolve the platform-specific report profile (defaults to the finding's own platform).
         profile = get_profile(platform or finding.platform.value)
         if ai:
+            # Draft narrative fields in memory (and maybe persist them, on confirmation).
             _draft_with_ai(finding, store)
+        # Which submission-checklist items this platform profile still considers incomplete.
         missing = profile.missing(finding)
         if missing:
             typer.secho(f"  Incomplete for a {profile.display_name} final report:", fg="yellow")
-            for m in missing:
-                typer.secho(f"   - {m}", fg="yellow")
+            for missing_item in missing:
+                typer.secho(f"   - {missing_item}", fg="yellow")
         else:
+            # Every checklist item is satisfied — the finding is ready to submit.
             finding.status = FindingStatus.ready
             store.update(finding)
             typer.secho("  All submission-checklist items satisfied; marked ready.", fg="green")
+        # Render and write the report file regardless of readiness (still useful to review).
         path = _emit(finding, profile, fmt, settings.reports_dir)
     finally:
+        # Always close the sqlite3 connection, even if rendering raised.
         store.close()
     typer.secho(f"final written: {path}", fg="green")

@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # hand-curated YAML — `parnet:` for `parent:`, `soruce_note:` for `source_note:` — would be silently
 # dropped and the entry would load looking valid. That defeats the entire point of a loader whose job
 # is to turn a curation slip into a failing test rather than a bad citation in a report.
+# Shared strict config: any unrecognized field in curated YAML fails validation instead of vanishing.
 _STRICT = ConfigDict(extra="forbid")
 
 
@@ -73,6 +74,7 @@ class CategoryMapping(BaseModel):
 
     def refs(self, framework: str) -> list[str]:
         """Related entry ids in one framework; empty list if the mapping has none for it."""
+        # `.get(..., [])` so an uncited framework returns empty rather than raising KeyError.
         return list(self.entries.get(framework, []))
 
     def is_empty(self) -> bool:
@@ -82,6 +84,7 @@ class CategoryMapping(BaseModel):
         not an error condition, so :meth:`KnowledgePack.mapping_for` returns this rather than
         raising for an unmapped category.
         """
+        # True only if every framework's id list is empty AND there is no remediation draft either.
         return not any(self.entries.values()) and not self.remediation
 
 
@@ -93,6 +96,7 @@ class Framework(BaseModel):
 
     def by_id(self, entry_id: str) -> Entry | None:
         """Look up one entry by id within this framework, or ``None`` if it is not present."""
+        # Delegate to the memoised id index rather than scanning `entries` linearly each call.
         return self._index.get(entry_id)
 
     @property
@@ -100,8 +104,11 @@ class Framework(BaseModel):
         # Built lazily and memoised on the instance; packs are loaded once and read many times.
         cached = self.__dict__.get("_id_index")
         if cached is None:
-            cached = {e.id: e for e in self.entries}
+            # First lookup on this instance: build the id -> Entry index once.
+            cached = {entry.id: entry for entry in self.entries}
+            # Stash it directly on __dict__ (bypassing pydantic's own attribute machinery).
             self.__dict__["_id_index"] = cached
+        # Either the freshly built index or the one memoised from an earlier call.
         return cached
 
 
@@ -123,19 +130,24 @@ class KnowledgePack(BaseModel):
     def framework(self, key: str) -> Framework:
         """Look up one framework by key, raising a clear error naming the ones that do exist."""
         try:
+            # Direct dict lookup; the common, fast path.
             return self.frameworks[key]
         except KeyError:
+            # Re-raise with the full list of valid keys, since a caller here is likely mistyping one.
             raise KeyError(
                 f"unknown framework {key!r}; pack has {sorted(self.frameworks)}"
             ) from None
 
     def entry(self, framework: str, entry_id: str) -> Entry | None:
         """Resolve one entry by ``(framework, entry_id)``, or ``None`` if the id is not present."""
+        # Resolve the framework first (raises if unknown), then look up the entry within it.
         return self.framework(framework).by_id(entry_id)
 
     def mapping_for(self, category) -> CategoryMapping:
         """Never raises: an unmapped category yields an empty mapping so reports still render."""
+        # Accept either the enum or its raw string value.
         key = getattr(category, "value", category)
+        # A synthesized empty mapping stands in for a category the pack has not yet curated.
         return self.mappings.get(key) or CategoryMapping(category=key)
 
     def search(self, query: str, *, frameworks: list[str] | None = None) -> list[SearchHit]:
@@ -144,21 +156,30 @@ class KnowledgePack(BaseModel):
         Pass ``frameworks`` to narrow the search to specific keys; an unknown key is skipped
         rather than raised, so a stale key never breaks a broader search.
         """
+        # Normalize the query once: case-insensitive, no leading/trailing whitespace.
         needle = query.strip().lower()
         if not needle:
+            # A blank query matches nothing, rather than degrading into "match every entry".
             return []
+        # Search every framework by default, or only the caller-specified subset.
         scope = frameworks if frameworks is not None else list(self.frameworks)
+        # Matches collected across every framework in scope, in framework then entry order.
         hits: list[SearchHit] = []
         for key in scope:
             fw = self.frameworks.get(key)
             if fw is None:
+                # An unknown/stale framework key in `frameworks` is skipped, not an error.
                 continue
             for entry in fw.entries:
+                # Search across id, title, and description together as one lowercase string.
                 haystack = f"{entry.id} {entry.title} {entry.description}".lower()
                 if needle in haystack:
+                    # Record the match paired with which framework it came from.
                     hits.append(SearchHit(framework=key, entry=entry))
+        # Every entry across the searched frameworks whose id/title/description matched.
         return hits
 
     def attributions(self) -> list[str]:
         """Attribution lines for every source, for rendering into generated reports."""
+        # One attribution string per loaded framework, in dict-iteration (insertion) order.
         return [fw.source.attribution for fw in self.frameworks.values()]

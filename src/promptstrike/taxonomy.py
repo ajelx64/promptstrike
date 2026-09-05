@@ -30,6 +30,7 @@ class OwaspLLM(str, Enum):
     LLM10 = "LLM10"  # Unbounded Consumption
 
 
+# Human-readable OWASP category titles, keyed by the stable enum id (see class docstring above).
 _TITLES: dict[OwaspLLM, str] = {
     OwaspLLM.LLM01: "Prompt Injection",
     OwaspLLM.LLM02: "Sensitive Information Disclosure",
@@ -56,6 +57,7 @@ _DEFAULT_CWES: dict[OwaspLLM, list[str]] = {
 
 def title(category: OwaspLLM) -> str:
     """The OWASP-published title for a category, for report headings and CLI output."""
+    # Look up the published title by the category's stable enum id.
     return _TITLES[category]
 
 
@@ -66,4 +68,5 @@ def default_cwes(category: OwaspLLM) -> list[str]:
     confidently wrong CWE in a submitted report costs more credibility than an absent one. Returns
     a copy, so a caller mutating a finding's ``cwe`` list cannot corrupt the shared table.
     """
+    # Wrap in list() so a caller mutating the result can't corrupt the shared _DEFAULT_CWES table.
     return list(_DEFAULT_CWES.get(category, []))

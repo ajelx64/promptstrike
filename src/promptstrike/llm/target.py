@@ -49,9 +49,14 @@ class RateLimiter:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
+        # Seconds that must elapse between sends. A zero/negative/None rps means "no limiting",
+        # which is stored as an interval of 0 rather than raising - see acquire()'s docstring.
         self.min_interval = (1.0 / rps) if rps and rps > 0 else 0.0
+        # Injected sleep, so tests can advance time without actually waiting.
         self._sleep = sleep
+        # Injected monotonic clock; monotonic (not wall time) so an NTP step cannot skip the wait.
         self._clock = clock
+        # Timestamp of the previous acquire, or None before the first send.
         self._last: float | None = None
 
     async def acquire(self) -> None:
@@ -61,13 +66,20 @@ class RateLimiter:
         as real as the rate the caller configured. :meth:`TargetClient.send` acquires before every
         live send; that call site is what makes the guard unconditional in practice.
         """
+        # Limiting disabled: return immediately without recording a timestamp.
         if self.min_interval <= 0:
             return
+        # Read the clock once so the gap calculation is against a single consistent instant.
         now = self._clock()
+        # Nothing to wait for on the very first send.
         if self._last is not None:
-            wait = self.min_interval - (now - self._last)
-            if wait > 0:
-                await self._sleep(wait)
+            # How much of the minimum interval has not yet elapsed since the previous send.
+            remaining_wait = self.min_interval - (now - self._last)
+            # Only sleep when the interval has not already passed on its own.
+            if remaining_wait > 0:
+                # Yield to the event loop for the remainder - this is the no-DoS pacing.
+                await self._sleep(remaining_wait)
+        # Stamp AFTER sleeping, so the next interval is measured from when this send was released.
         self._last = self._clock()
 
 
@@ -133,6 +145,7 @@ class AuthLog:
     """Append-only JSONL authorization log — a compliance/safe-harbor artifact per run."""
 
     def __init__(self, path: str | Path) -> None:
+        # Destination JSONL file. Parent directories are created lazily on the first record().
         self.path = Path(path)
 
     def record(
@@ -156,21 +169,34 @@ class AuthLog:
         text. ``requested_live`` is what the operator asked for and ``live`` is what actually
         happened; the two differ exactly when a ``--live`` attempt failed the scope check.
         """
+        # One JSON object per decision. Field names are the log's on-disk schema, so anything
+        # reading these files (or a program owner reviewing them) binds to these exact keys.
         entry = {
+            # UTC + ISO-8601 so entries from different machines/timezones still sort correctly.
             "timestamp": datetime.now(UTC).isoformat(),
             "program": program,
             # Redacted, not raw: this file is meant to be shareable as a safe-harbor artifact.
             "target": redact_target(target),
+            # Fingerprint, not the text: enough to prove two entries used the same prompt, while
+            # keeping working exploit text out of a file meant to be shared with a program owner.
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16],
+            # Length is kept because the hash alone says nothing about the scale of what was sent.
             "prompt_len": len(prompt),
             "requested_live": requested_live,  # what the operator asked for
             "live": live,  # what actually happened (a denied --live attempt logs live=false)
+            # The scope gate's verdict for this attempt.
             "allowed": allowed,
+            # The deciding asset / gate, copied verbatim from the ScopeDecision or the dry-run gate.
             "reason": reason,
         }
+        # Create the log directory on demand so the first attempt of a fresh install still records.
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(entry) + "\n")
+        # Append-only mode: existing entries are never rewritten, which is what makes the file
+        # usable as an audit trail.
+        with self.path.open("a", encoding="utf-8") as log_file:
+            # One compact JSON object per line - the JSONL shape, so the file stays streamable.
+            log_file.write(json.dumps(entry) + "\n")
+        # Return the entry so callers (and tests) can assert on exactly what was recorded.
         return entry
 
 
@@ -180,20 +206,36 @@ async def openai_chat_transport(prompt: str, target: str, program: Program) -> t
     Reads ``PROMPTSTRIKE_TARGET_API_KEY`` / ``PROMPTSTRIKE_TARGET_MODEL`` from the environment.
     Imported lazily so httpx is only required when actually firing live.
     """
+    # Imported here, not at module scope, so the rest of the tool (and every dry run) works
+    # without httpx installed - reaching this line means traffic is genuinely about to be sent.
     import httpx
 
+    # Which model to ask for; the default keeps a bare `--live` run from failing on a missing var.
     model = os.environ.get("PROMPTSTRIKE_TARGET_MODEL", "gpt-4o-mini")
+    # Base headers for the JSON request body.
     headers = {"Content-Type": "application/json"}
+    # Credentials come from the environment only - never from the program YAML or the CLI args.
     api_key = os.environ.get("PROMPTSTRIKE_TARGET_API_KEY")
+    # Only add an Authorization header when a key is actually configured; some targets need none.
     if api_key:
+        # Bearer scheme, per the OpenAI-compatible convention this transport implements.
         headers["Authorization"] = f"Bearer {api_key}"
+    # Single-turn chat-completions body - the probe prompt is the whole user message.
     payload = {"model": model, "messages": [{"role": "user", "content": prompt}]}
+    # Bounded timeout, and the context manager guarantees the connection is closed on any error.
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(target, json=payload, headers=headers)
-        resp.raise_for_status()
-        data = resp.json()
+        # The actual outbound request. This function performs NO scope check of its own - it is
+        # only ever reached through TargetClient.send, which has already run the gate.
+        response = await client.post(target, json=payload, headers=headers)
+        # Turn a 4xx/5xx into an exception so a rejected probe is never mistaken for a clean reply.
+        response.raise_for_status()
+        # Parse the body while the client is still open.
+        data = response.json()
+    # Dig out the assistant text with .get() defaults, so a 200 that omits message/content yields
+    # "" instead of raising. Note an explicitly EMPTY "choices" list would still raise IndexError.
     text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
-    return text, {"model": data.get("model", model), "status_code": resp.status_code}
+    # Return the reply plus the metadata TargetClient records on the Evidence.
+    return text, {"model": data.get("model", model), "status_code": response.status_code}
 
 
 class TargetClient:
@@ -268,6 +310,8 @@ class TargetClient:
                 "Set PROMPTSTRIKE_DRY_RUN=false to permit live traffic."
             )
 
+        # Step 1 - evaluate scope BEFORE any transport work. check() never sends anything itself,
+        # so nothing has touched the network at this point regardless of the verdict.
         decision = check(self.program, target)
         # Log the attempt (denied attempts are logged too, for audit).
         self.auth_log.record(
@@ -275,31 +319,49 @@ class TargetClient:
             target=target,
             prompt=prompt,
             requested_live=live,
+            # A denied --live attempt records live=false: what HAPPENED, not what was asked for.
             live=live and decision.allowed,
             allowed=decision.allowed,
             reason=decision.reason,
         )
+        # Step 3 - refuse an out-of-scope target. Raising here means the transport below is
+        # unreachable for anything the program did not authorize.
         if not decision.allowed:
+            # ScopeError (not DryRunError): the fix is a scope registration, not an env setting.
             raise ScopeError(decision.reason)
 
+        # Step 4 - the default path. `live` is False unless the caller opted in, so a forgotten
+        # flag produces evidence with no network use rather than silent traffic.
         if not live:
             # Render-only: never touch the network.
             return Evidence(
                 prompt=prompt,
                 response="",
                 model=self.model,
+                # dry_run=True is recorded on the Evidence itself, so a rendered exchange can
+                # never later be mistaken for a real one; the target is redacted before storage.
                 metadata={"dry_run": True, "target": redact_target(target)},
             )
 
+        # Step 5 - live. Pace first: the limiter is acquired before EVERY send, which is what
+        # makes the no-DoS guard unconditional rather than a policy the caller has to remember.
         await self.rate_limiter.acquire()
-        start = time.monotonic()
-        text, meta = await self.transport(prompt, target, self.program)
-        latency_ms = int((time.monotonic() - start) * 1000)
+        # Monotonic start stamp for the latency measurement below.
+        send_started_at = time.monotonic()
+        # The one and only outbound call in the tool - everything above had to pass to reach it.
+        response_text, transport_metadata = await self.transport(prompt, target, self.program)
+        # Round-trip time in milliseconds; reported in findings as reproduction detail.
+        latency_ms = int((time.monotonic() - send_started_at) * 1000)
+        # Capture the real exchange as the reproducibility artifact for any resulting finding.
         return Evidence(
             prompt=prompt,
-            response=text,
-            model=str(meta.get("model", self.model)),
-            model_version=str(meta.get("model_version", "")),
+            response=response_text,
+            # Prefer the model the target actually answered with; fall back to the configured one.
+            model=str(transport_metadata.get("model", self.model)),
+            # Version is best-effort - most OpenAI-compatible targets do not report one.
+            model_version=str(transport_metadata.get("model_version", "")),
             latency_ms=latency_ms,
-            metadata={**meta, "dry_run": False, "target": redact_target(target)},
+            # Transport metadata is merged in, then dry_run/target are set last so a transport
+            # cannot overwrite the dry-run marker or reinstate an unredacted target.
+            metadata={**transport_metadata, "dry_run": False, "target": redact_target(target)},
         )

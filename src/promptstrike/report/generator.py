@@ -19,6 +19,7 @@ from promptstrike.report.profiles import Profile
 
 
 def _templates_dir() -> Path:
+    # Package-relative path to the bundled Jinja templates, independent of the caller's cwd.
     return Path(__file__).parent / "templates"
 
 
@@ -27,10 +28,12 @@ def _templates_dir() -> Path:
 # `report_title` (whose text comes from taxonomy._TITLES — OWASP's verbatim 2025 category names);
 # CVSS and CWE appear alongside it. Deriving attribution only from `framework_refs` missed all three,
 # because `mappings.yaml` has no `owasp_llm` key: the category *is* the OWASP id.
+# Attribution line for the CVSS score every finding carries.
 _CVSS_ATTRIBUTION = (
     "CVSS v3.1 / v4.0 (Common Vulnerability Scoring System), (c) FIRST.org, Inc. — "
     "https://www.first.org/cvss/"
 )
+# Attribution line for the CWE id(s) a finding may carry.
 _CWE_ATTRIBUTION = (
     "CWE(TM) (Common Weakness Enumeration), (c) The MITRE Corporation — https://cwe.mitre.org/"
 )
@@ -40,6 +43,8 @@ class ReportGenerator:
     """Renders a Finding into Markdown, HTML, or PDF via Jinja2, autoescape on for target text."""
 
     def __init__(self, templates_dir: Path | None = None) -> None:
+        # Jinja environment shared by every render call; autoescape is scoped to html/xml template
+        # extensions only, so the Markdown template below is NOT auto-escaped by this setting.
         self.env = Environment(
             loader=FileSystemLoader(str(templates_dir or _templates_dir())),
             autoescape=select_autoescape(["html", "xml"]),
@@ -53,9 +58,12 @@ class ReportGenerator:
         only for frameworks this finding actually cites, because listing all five would be noise and
         would imply corroboration the finding does not have.
         """
+        # Imported locally to avoid a module-level import cycle between report and knowledge.
         from promptstrike import knowledge
 
+        # Load the vendored knowledge pack (cached after the first call in this process).
         pack = knowledge.pack()
+        # Per-framework citation groups this finding actually uses, built up below.
         groups: list[dict] = []
         # Unconditional: these are cited by construction in every report, not by reference.
         attributions: list[str] = [
@@ -64,17 +72,23 @@ class ReportGenerator:
             _CWE_ATTRIBUTION,
         ]
 
+        # Iterate frameworks in a stable, sorted order so report layout does not vary run to run.
         for fw_key in sorted(finding.framework_refs):
+            # Entry ids this finding cites within that one framework.
             ids = finding.refs(fw_key)
             if not ids:
+                # Nothing to render for a framework the finding references with an empty id list.
                 continue
             try:
+                # Resolve the framework object itself (raises KeyError if not in the pack).
                 framework = pack.framework(fw_key)
             except KeyError:
                 # A ref to a framework no longer in the pack: skip rather than break the report.
                 continue
+            # Resolved citation dicts for this one framework, in the order the ids were listed.
             refs = []
             for entry_id in ids:
+                # Look up the entry so the report can show its title, not just a bare code.
                 entry = pack.entry(fw_key, entry_id)
                 if entry is None:
                     # An id that does not resolve must NOT render as a confident citation — a
@@ -89,7 +103,9 @@ class ReportGenerator:
                             ),
                         }
                     )
+                    # Move on; this id has already been recorded as unresolved above.
                     continue
+                # Entry resolved: record its title plus the combined verification status.
                 refs.append(
                     {
                         "id": entry_id,
@@ -105,12 +121,17 @@ class ReportGenerator:
             # NB: key is `refs`, not `items` — Jinja resolves `group.items` to dict.items (the
             # built-in method) before the mapping key, which silently yields a non-iterable.
             groups.append({"key": fw_key, "name": framework.source.name, "refs": refs})
+            # Record this framework's own attribution line, added only because it was cited.
             attributions.append(" ".join(framework.source.attribution.split()))
 
+        # Hand back both the per-framework citation groups and the flat attribution list.
         return groups, attributions
 
     def _context(self, finding: Finding, profile: Profile) -> dict:
+        # Resolve citation groups/attributions once; shared by the markdown/html render context.
         framework_groups, attributions = self._framework_context(finding)
+        # Single template context dict, reused by both render_markdown and render_html so the two
+        # output formats never drift apart on what data they show.
         return {
             "framework_groups": framework_groups,
             "attributions": attributions,
@@ -126,24 +147,35 @@ class ReportGenerator:
 
     def render_markdown(self, finding: Finding, profile: Profile) -> str:
         """Render ``finding`` as a Markdown report using ``profile``'s severity scheme + checklist."""
+        # Markdown template path: autoescape does NOT apply here (it is scoped to html/xml
+        # extensions only), so target-controlled text is written out unescaped, as Markdown.
         return self.env.get_template("report/finding.md.j2").render(
             **self._context(finding, profile)
         )
 
     def render_html(self, finding: Finding, profile: Profile) -> str:
         """Render ``finding`` as an HTML report; :meth:`render_pdf` converts this output to PDF."""
+        # HTML template path: this extension is covered by autoescape, so target-controlled prompt
+        # and response text is HTML-escaped before it reaches the page.
         return self.env.get_template("report/finding.html").render(
             **self._context(finding, profile)
         )
 
     def render_pdf(self, finding: Finding, profile: Profile) -> bytes | None:
         """Render a PDF, or return None (soft-fail) if WeasyPrint / its system libs are unavailable."""
+        # Reuse the already-escaped HTML render as WeasyPrint's input document.
         html = self.render_html(finding, profile)
         try:
+            # Import WeasyPrint lazily: only PDF rendering needs its GTK/Pango system libraries,
+            # so the rest of the tool must not fail to import when that stack is missing.
             import weasyprint  # lazy: a missing GTK/Pango stack must not break import
         except Exception:
+            # GTK/Pango stack (or anything else about the import) unavailable: soft-fail to None so
+            # the caller can fall back to HTML/Markdown instead of crashing the CLI.
             return None
         try:
+            # Convert the escaped HTML into PDF bytes.
             return weasyprint.HTML(string=html).write_pdf()
         except Exception:
+            # A render-time failure (bad HTML/CSS, etc.) gets the same soft-fail contract.
             return None

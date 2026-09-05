@@ -18,6 +18,8 @@ Typical use::
 
 from __future__ import annotations
 
+# Re-exported so callers can do `from promptstrike import knowledge` and use `knowledge.pack()`
+# without knowing the pack lives in a `loader` submodule internally.
 from promptstrike.knowledge.loader import load_pack, pack, refs_for, suggest_remediation
 from promptstrike.knowledge.models import (
     CategoryMapping,
@@ -28,6 +30,8 @@ from promptstrike.knowledge.models import (
     SourceMeta,
 )
 
+# Public surface of this package; keeps `from promptstrike.knowledge import *` and static
+# analysis tools aligned with what is actually meant to be used from outside this package.
 __all__ = [
     "CategoryMapping",
     "Entry",

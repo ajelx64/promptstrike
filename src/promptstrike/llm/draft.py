@@ -15,8 +15,10 @@ from typing import Protocol
 from promptstrike import taxonomy
 from promptstrike.models import Finding
 
+# Model used for narrative drafting; overridable per-call via claude_drafter's `model` parameter.
 DRAFT_MODEL = "claude-opus-4-8"
 
+# JSON schema the model's response must satisfy, enforced server-side via output_config below.
 _SCHEMA = {
     "type": "object",
     "properties": {
@@ -29,6 +31,8 @@ _SCHEMA = {
     "additionalProperties": False,
 }
 
+# System prompt: sets the drafting task and, critically, tells the model the evidence fence below
+# is data to report on, never instructions to follow.
 _SYSTEM = (
     "You are assisting an authorized bug-bounty researcher in drafting a vulnerability report for an "
     "AI/LLM security finding. Given the finding metadata and the captured request/response evidence, "
@@ -59,6 +63,7 @@ class DraftNarrative:
     a failed or truncated draft.
     """
 
+    # Defaults to empty/None so a partial or failed draft still yields a usable, mergeable object.
     summary: str = ""
     impact: str = ""
     remediation: str = ""
@@ -114,15 +119,18 @@ def _prompt(finding: Finding) -> str:
         lines.append(f"[{index}] RESPONSE: {_truncate_evidence(evidence.response)}")
     # Close the fence so the boundary is unambiguous even with odd content inside.
     lines.append("UNTRUSTED-EVIDENCE-END")
+    # Flatten into the single prompt string sent as the user message.
     return "\n".join(lines)
 
 
 def claude_drafter(finding: Finding, *, client=None, model: str = DRAFT_MODEL) -> DraftNarrative:
     """Draft narrative fields for a finding using Claude. Needs `anthropic` + ANTHROPIC_API_KEY."""
+    # Only construct a real client when the caller didn't inject a test double.
     if client is None:
         import anthropic  # lazy import — only required when actually drafting
 
         client = anthropic.Anthropic()  # resolves ANTHROPIC_API_KEY from the environment
+    # Send the fenced prompt, constraining the reply to the narrative JSON schema above.
     response = client.messages.create(
         model=model,
         max_tokens=2000,
@@ -130,8 +138,13 @@ def claude_drafter(finding: Finding, *, client=None, model: str = DRAFT_MODEL) -
         messages=[{"role": "user", "content": _prompt(finding)}],
         output_config={"format": {"type": "json_schema", "schema": _SCHEMA}},
     )
-    text = next((b.text for b in response.content if b.type == "text"), "{}")
+    # Pull the text block out of the response; "{}" as a fallback if none is present.
+    text = next(
+        (block.text for block in response.content if block.type == "text"), "{}"
+    )
+    # Parse the schema-constrained JSON payload into a plain dict.
     data = json.loads(text)
+    # Build the narrative, defaulting any field the model omitted to empty/None.
     return DraftNarrative(
         summary=data.get("summary", ""),
         impact=data.get("impact", ""),
@@ -142,6 +155,8 @@ def claude_drafter(finding: Finding, *, client=None, model: str = DRAFT_MODEL) -
 
 def apply_narrative(finding: Finding, narrative: DraftNarrative) -> Finding:
     """Merge drafted narrative into a finding (only overwrites fields the drafter actually produced)."""
+    # Each field is only overwritten if the drafter actually produced it, so a partial/failed
+    # draft never blanks out data the operator (or an earlier draft) already provided.
     if narrative.summary:
         finding.summary = narrative.summary
     if narrative.impact:
@@ -150,4 +165,5 @@ def apply_narrative(finding: Finding, narrative: DraftNarrative) -> Finding:
         finding.remediation = narrative.remediation
     if narrative.steps_to_reproduce:
         finding.steps_to_reproduce = narrative.steps_to_reproduce
+    # Return the same finding instance, mutated in place, for convenient call-site chaining.
     return finding

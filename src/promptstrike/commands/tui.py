@@ -19,9 +19,11 @@ def tui(
 ) -> None:
     """Open the interactive triage & report workbench."""
     try:
+        # Deferred import: only touches the optional `textual` dependency when the TUI is used.
         from promptstrike.tui.app import run
     except ModuleNotFoundError as exc:  # pragma: no cover - exercised by the guard test
         if exc.name and exc.name.split(".")[0] == "textual":
+            # Missing extra, not a real bug: point the operator at the fix and the fallback path.
             typer.echo(
                 "The TUI needs the optional 'textual' dependency.\n"
                 "  pip install 'promptstrike[tui]'   (or: pip install textual)\n"
@@ -29,5 +31,7 @@ def tui(
                 err=True,
             )
             raise typer.Exit(code=3) from None
+        # Some other missing module: a real problem, so let it propagate as a normal traceback.
         raise
+    # Launch the workbench, passing through the optional --db override.
     run(db_path=db)

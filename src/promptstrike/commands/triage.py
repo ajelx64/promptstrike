@@ -18,18 +18,23 @@ def triage(
     settings = get_settings()
     settings.ensure_dirs()
     with FindingStore(settings.db_path) as store:
+        # Load the finding under review.
         finding = store.get(finding_id)
         if finding is None:
             typer.secho(f"unknown finding #{finding_id}", fg="red")
             raise typer.Exit(code=1)
+        # Every other stored finding, to check the current one against for duplicates/variants.
         others = store.list()
 
+    # Compare this finding's category/target/host against every other stored finding.
     result = dedupe(finding, others)
     if result.duplicates:
+        # Exact duplicate: same category and same target — almost certainly the same bug.
         typer.secho(
             f"  DUPLICATE of finding(s) {result.duplicates} — same category + target.", fg="red"
         )
     if result.variants:
+        # Weaker match: same category and host, but a different target — worth a manual look.
         typer.secho(
             f"  Possible variant of finding(s) {result.variants} — same category, same host.",
             fg="yellow",
@@ -37,11 +42,13 @@ def triage(
     if not result.duplicates and not result.variants:
         typer.secho("  No local duplicates found.", fg="green")
 
+    # Resolve the platform-specific submission checklist (defaults to the finding's own platform).
     profile = get_profile(platform or finding.platform.value)
+    # Which checklist items this finding is still missing for that platform.
     gaps = lint(finding, profile)
     if gaps:
         typer.secho(f"  {profile.display_name} checklist gaps:", fg="yellow")
-        for g in gaps:
-            typer.secho(f"   - {g}", fg="yellow")
+        for gap in gaps:
+            typer.secho(f"   - {gap}", fg="yellow")
     else:
         typer.secho(f"  {profile.display_name} checklist: complete.", fg="green")
