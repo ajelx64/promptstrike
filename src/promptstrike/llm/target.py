@@ -71,6 +71,64 @@ class RateLimiter:
         self._last = self._clock()
 
 
+# Query parameters whose VALUE is a credential rather than a routing detail. Matched as a
+# substring on the lower-cased key, so "x-api-key" and "apiKey" are both caught.
+_SECRET_QUERY_KEYS = ("key", "token", "secret", "password", "passwd", "pwd", "sig", "signature")
+
+# What a redacted value is replaced with. A fixed marker rather than deletion, so the log still
+# shows that a credential WAS present - which is itself worth knowing when reading an audit trail.
+_REDACTED = "REDACTED"
+
+
+def redact_target(target: str) -> str:
+    """Strip credentials from a target URL before it is written anywhere durable.
+
+    The prompt is carefully hashed so the authorization log can be handed to a program owner as a
+    safe-harbor artifact - but the target sits beside it, and an endpoint written as
+    ``https://user:secret@host/v1?api_key=...`` would put the operator's own credentials in that
+    same file, and in the evidence transcripts and generated reports. Sanitizing the prompt while
+    logging the target verbatim defeats the effort spent on the prompt.
+
+    Returns the target with userinfo removed and secret-bearing query values replaced. Anything
+    that does not parse as a URL is returned unchanged - this is a redactor, not a validator, and
+    it must never be the reason a send fails.
+    """
+    # A target with no scheme (a bare host, or a model token) carries no userinfo or query.
+    if "://" not in target:
+        return target
+    # Split off the scheme so the authority can be inspected on its own.
+    scheme, _, remainder = target.partition("://")
+    # Separate the authority from everything after the first slash.
+    authority, slash, path_and_query = remainder.partition("/")
+    # Userinfo is credentials by definition; drop it and record that it was there.
+    if "@" in authority:
+        # Split on the LAST "@" since userinfo may itself contain one.
+        authority = _REDACTED + "@" + authority.rsplit("@", 1)[1]
+    # Separate the query string, if any, from the path.
+    path, question, query = path_and_query.partition("?")
+    # Redact the value of any parameter whose name looks credential-bearing.
+    if query:
+        # Rebuilt parameter list, preserving order and unknown keys.
+        redacted_params = []
+        # Split on "&" - this is a textual redaction, so no need to fully parse.
+        for parameter in query.split("&"):
+            # Split each parameter into name and value at the first "=".
+            name, equals, _value = parameter.partition("=")
+            # A parameter with no value has nothing to redact.
+            if not equals:
+                redacted_params.append(parameter)
+                continue
+            # Replace the value when the name looks like it carries a secret.
+            if any(marker in name.lower() for marker in _SECRET_QUERY_KEYS):
+                redacted_params.append(f"{name}={_REDACTED}")
+            else:
+                redacted_params.append(parameter)
+        # Reassemble the query string.
+        query = "&".join(redacted_params)
+    # Put the URL back together from its sanitized parts.
+    return scheme + "://" + authority + slash + path + question + query
+
+
 class AuthLog:
     """Append-only JSONL authorization log — a compliance/safe-harbor artifact per run."""
 
@@ -101,7 +159,8 @@ class AuthLog:
         entry = {
             "timestamp": datetime.now(UTC).isoformat(),
             "program": program,
-            "target": target,
+            # Redacted, not raw: this file is meant to be shareable as a safe-harbor artifact.
+            "target": redact_target(target),
             "prompt_sha256": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16],
             "prompt_len": len(prompt),
             "requested_live": requested_live,  # what the operator asked for
@@ -229,7 +288,7 @@ class TargetClient:
                 prompt=prompt,
                 response="",
                 model=self.model,
-                metadata={"dry_run": True, "target": target},
+                metadata={"dry_run": True, "target": redact_target(target)},
             )
 
         await self.rate_limiter.acquire()
@@ -242,5 +301,5 @@ class TargetClient:
             model=str(meta.get("model", self.model)),
             model_version=str(meta.get("model_version", "")),
             latency_ms=latency_ms,
-            metadata={**meta, "dry_run": False, "target": target},
+            metadata={**meta, "dry_run": False, "target": redact_target(target)},
         )

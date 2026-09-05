@@ -6,7 +6,13 @@ import json
 
 import pytest
 
-from promptstrike.llm.target import AuthLog, DryRunError, RateLimiter, TargetClient
+from promptstrike.llm.target import (
+    AuthLog,
+    DryRunError,
+    RateLimiter,
+    TargetClient,
+    redact_target,
+)
 from promptstrike.models import AssetType, Platform, Program, ScopeAsset
 from promptstrike.scope import ScopeError
 
@@ -186,3 +192,76 @@ async def test_global_dry_run_still_allows_a_dry_run(tmp_path) -> None:
     assert spy.calls == []
     # ...and the caller still gets the render-only Evidence it expects.
     assert evidence.metadata["dry_run"] is True
+
+
+# ---------------------------------------------------------------------------------------------
+# Credential redaction. The prompt is hashed so the authorization log can be handed to a program
+# owner - but the target sits beside it, and an endpoint carrying userinfo or an api_key would
+# put the operator's OWN credentials in that same shareable file.
+# ---------------------------------------------------------------------------------------------
+
+
+def test_redact_target_strips_userinfo_and_secret_query_values() -> None:
+    """Credentials must not survive into anything durable."""
+    # A target written the way a careless copy-paste produces one.
+    raw = "https://svc:SuperSecret123@api.example.com/v1/chat?api_key=AKIAREAL&model=gpt-4o"
+    # Redact it the way the log and Evidence metadata now do.
+    redacted = redact_target(raw)
+    # The password must be gone.
+    assert "SuperSecret123" not in redacted
+    # So must the key value.
+    assert "AKIAREAL" not in redacted
+    # The host and path must survive, or the log stops being useful as an audit record.
+    assert "api.example.com/v1/chat" in redacted
+    # Non-secret parameters are untouched, so the record still shows what was requested.
+    assert "model=gpt-4o" in redacted
+    # And the redaction is visible rather than silent - that a credential WAS present is itself
+    # worth knowing when reading an audit trail.
+    assert "REDACTED" in redacted
+
+
+def test_redact_target_leaves_ordinary_targets_alone() -> None:
+    """Positive control: a clean URL must pass through byte-identical."""
+    # Nothing here is credential-bearing.
+    clean = "https://api.example.com/v1/chat?api-version=2026-01-01"
+    # So redaction must be a no-op.
+    assert redact_target(clean) == clean
+
+
+def test_redact_target_passes_through_non_urls() -> None:
+    """A bare host or model token has no userinfo or query, and must not be mangled."""
+    # Model assets are plain tokens, not URLs.
+    assert redact_target("gpt-4o-mini") == "gpt-4o-mini"
+
+
+async def test_credentials_never_reach_the_authorization_log(tmp_path) -> None:
+    """End-to-end: a live send with credentials in the URL must not log them."""
+    # A program whose in-scope asset is the credential-bearing endpoint.
+    program = Program(
+        name="example",
+        platform=Platform.google_ai_vrp,
+        allows_ai_testing=True,
+        in_scope=[ScopeAsset(value="https://api.example.com/v1", type=AssetType.endpoint)],
+    )
+    # Fixed log path so it can be read back.
+    log_path = tmp_path / "auth.jsonl"
+    # A client permitted to send, with a spy transport standing in for the network.
+    client = TargetClient(
+        program,
+        rate_limiter=SpyLimiter(),
+        auth_log=AuthLog(log_path),
+        transport=SpyTransport(),
+        allow_live=True,
+    )
+    # Send to the in-scope endpoint, spelled with embedded credentials.
+    await client.send(
+        "hello",
+        "https://svc:SuperSecret123@api.example.com/v1/chat",
+        live=True,
+    )
+    # The whole log file, as text.
+    logged = log_path.read_text(encoding="utf-8")
+    # The credential must appear nowhere in it.
+    assert "SuperSecret123" not in logged
+    # And the entry must still identify the target host, or the audit trail is useless.
+    assert "api.example.com" in logged
