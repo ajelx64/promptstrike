@@ -53,6 +53,28 @@ class ReportGenerator:
         # than anything the target returned. Autoescape cannot help there - Markdown is not
         # HTML - so this is what stops attacker-controlled output escaping its code block.
         self.env.filters["md_fence"] = self._markdown_fence_for
+        # For target-controlled values rendered outside a fence - the summary table and the
+        # reproduction steps - where a live image or link would be attributed to the operator.
+        self.env.filters["md_escape"] = self._markdown_escape
+
+    @staticmethod
+    def _markdown_escape(text: str) -> str:
+        """Neutralise Markdown metacharacters in text rendered OUTSIDE a code fence.
+
+        Fencing the Evidence block was not enough: the same attacker-controlled text is echoed
+        into the reproduction steps, and ``finding.model`` is read straight from the target's own
+        JSON response body and rendered in the summary table. Both sit outside any fence, so an
+        image or link in them renders live in the triager's browser, attributed to the operator
+        who submitted the report. HTML autoescape does not help - Markdown is not HTML.
+        """
+        # Backslash-escape the characters that start a link, image, emphasis, heading, list,
+        # quote or code span. Escaping the backslash first keeps the rest from being undone.
+        escaped = str(text).replace("\\", "\\\\")
+        for character in "`*_[]()#+-!>|~":
+            escaped = escaped.replace(character, "\\" + character)
+        # Collapse newlines: a line break can start a new block-level construct even when every
+        # metacharacter is escaped.
+        return escaped.replace("\r", " ").replace("\n", " ")
 
     @staticmethod
     def _markdown_fence_for(text: str) -> str:

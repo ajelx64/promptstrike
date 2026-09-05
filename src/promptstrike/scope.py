@@ -154,28 +154,56 @@ def _norm_endpoint(value: str) -> str:
     if "@" in authority:
         # Take the part after the LAST "@", since userinfo may itself contain one.
         authority = authority.rsplit("@", 1)[1]
-    # Normalize the port NUMERICALLY, not as text. A string compare against "443" missed
-    # every other spelling of the same port - an empty ":", and zero-padded ":0443"/":00443" -
-    # each of which httpx resolves to the default port, producing a wire request identical to
-    # the carve-out while the gate saw a different string and allowed it.
-    if ":" in authority:
-        # Split the port off the host. For a bracketed IPv6 literal with no port this yields a
-        # non-numeric right-hand side, which falls through untouched below.
+    # Normalize the port, and REFUSE anything that will not canonicalize.
+    #
+    # Two earlier versions of this leaked by enumerating: first a string compare against "443",
+    # then an `isdigit()` guard. Each let every unlisted spelling fall through with the authority
+    # UNCHANGED, so ":443 ", ": 443" and ":+443" still slipped past a carve-out that httpx then
+    # resolved to the same wire request. Passing unknown input through unchanged is fail-OPEN,
+    # and on the exclusion list fail-open means sending traffic somewhere a program forbade.
+    #
+    # So the rule is inverted: this function now raises for anything it cannot reduce to one
+    # canonical form, and the caller turns that into a denial. Unknown shape means no.
+    # Only a URL-shaped value has an authority with a port. A bare token that merely contains
+    # a colon - a model asset such as "model:gpt-x" - is not an authority, and treating its
+    # colon as a port separator would make every model target unresolvable.
+    is_url_shaped = "://" in value or "/" in value
+    if is_url_shaped and ":" in authority:
+        # Split the port off the host. A bracketed IPv6 literal with no port puts a non-port on
+        # the right, which the bracket check below tolerates.
         host_only, _, port_text = authority.rpartition(":")
-        if host_only:
-            # An empty port means "use the scheme default", so it is equivalent to no port.
-            if port_text == "":
+        # `[::1]` with no port: the rpartition split inside the brackets, so there is no port.
+        if authority.endswith("]"):
+            pass
+        elif host_only:
+            # Strip surrounding whitespace ONLY to detect it - a port with spaces is not a port,
+            # and silently accepting it is how ":443 " got through.
+            stripped_port = port_text.strip()
+            if stripped_port == "":
+                # An empty port means "use the scheme default", equivalent to no port at all.
                 authority = host_only
-            elif port_text.isdigit():
-                # Compare as an integer so 443, 0443 and 00443 are one value.
-                port_number = int(port_text)
-                if str(port_number) == _DEFAULT_PORTS.get(scheme):
+            elif stripped_port.isdecimal() and stripped_port == port_text:
+                # isdecimal() (not isdigit(), which is True for superscripts like the char in
+                # "x\u00b2" and then raises inside int()), plus an exact match against the
+                # unstripped text so " 443" and "443 " are refused rather than normalized.
+                port_number = int(stripped_port)
+                # A port outside the valid range is not a port.
+                if not 0 <= port_number <= 65535:
+                    raise ValueError(f"port out of range in {value!r}")
+                # A scheme-less asset has no default port to compare against, so treat BOTH
+                # well-known defaults as removable - otherwise a carve-out written
+                # "host:443/path" could never match a target written "https://host/path".
+                defaults = {_DEFAULT_PORTS[scheme]} if scheme in _DEFAULT_PORTS else {"80", "443"}
+                if str(port_number) in defaults:
                     # Default port carries no meaning; drop it.
                     authority = host_only
                 else:
-                    # Non-default port is significant, but store it canonically so a padded
-                    # spelling cannot differ from its plain form.
+                    # Significant port, stored canonically so a padded spelling cannot differ.
                     authority = f"{host_only}:{port_number}"
+            else:
+                # Anything else - "+443", "4 43", "0x1bb", unicode digits - is not something we
+                # can canonicalize, and the transport may well accept it. Refuse.
+                raise ValueError(f"uncanonicalizable authority in {value!r}")
     # Restore the leading slash that partition() consumed, when there was a path at all.
     path = slash + path
     # Decode percent-escapes so %61dmin is compared as admin.
@@ -245,10 +273,17 @@ def asset_matches(asset: ScopeAsset, target: str) -> bool:
     # endpoint (default): both sides are reduced to the form the transport will actually
     # request, then compared as a host+path prefix on a "/" boundary so /v1 cannot match
     # /v1administrator while /v1/administrator still does.
-    # Canonicalize the operator-authored asset the same way the target is canonicalized, so the
-    # comparison never depends on how either side happened to be spelled.
+    # Canonicalize both sides into one space, so the comparison never depends on how either was
+    # spelled. An asset the operator wrote badly must not crash every check against the program;
+    # on the EXCLUSION list, refusing to match would be fail-open, so an unusable value is
+    # reported as matching - the operator gets a denial and can fix their YAML, rather than
+    # silent exposure.
+    # Both sides are canonicalized into one space, so the comparison never depends on how either
+    # was spelled. A ValueError propagates deliberately: this function serves BOTH the in-scope
+    # and out-of-scope lists, and "unusable value" has opposite safe answers for each (match, so
+    # deny, for an exclusion; do not match for an inclusion). Only check() knows which list it is
+    # walking, so only check() may decide - see the handler there.
     canonical_asset = _norm_endpoint(asset_value)
-    # Canonicalize the candidate target into that same space.
     canonical_target = _norm_endpoint(raw)
     # Exact match, or a descendant path - the "+ /" is the boundary guard, without it "/v1" would
     # match "/v1administrator" and an out-of-scope carve-out could be walked around.
@@ -262,24 +297,46 @@ def check(program: Program, target: str) -> ScopeDecision:
     if not program.allows_ai_testing:
         # Deny before any asset is even consulted.
         return ScopeDecision(False, f"program '{program.name}' does not authorize AI testing")
-    # Precedence rule 2: exclusions are evaluated BEFORE inclusions, so out-of-scope always wins
+    # Precedence rule 2: a target that cannot be reduced to one canonical form is refused
+    # outright. It is not safe to compare a string the transport may interpret differently, and
+    # the failure is global rather than per-asset: if we cannot say what this target IS, we
+    # cannot say it is out of scope either.
+    # Only endpoint-shaped targets go through the canonicalizer; a bare model token ("gpt-x",
+    # "model:gpt-x") has no authority to normalize and is matched by exact comparison instead.
+    if "://" in target or "/" in target:
+        try:
+            _norm_endpoint(target)
+        except ValueError as exc:
+            return ScopeDecision(False, f"target could not be canonicalized: {exc}")
+    # Precedence rule 3: exclusions are evaluated BEFORE inclusions, so out-of-scope always wins
     # over an overlapping in-scope entry (e.g. /v1 in scope but /v1/admin carved out).
     for excluded_asset in program.out_of_scope:
+        # An asset the operator wrote badly cannot be evaluated, and guessing either way is
+        # unsafe - so the whole check fails loudly and they fix the YAML.
+        try:
+            excluded_matches = asset_matches(excluded_asset, target)
+        except ValueError as exc:
+            return ScopeDecision(False, f"out-of-scope asset is unusable: {exc}")
         # First carve-out that covers the target ends the evaluation.
-        if asset_matches(excluded_asset, target):
+        if excluded_matches:
             # Name the deciding asset in the reason so the operator can see WHICH rule refused.
             return ScopeDecision(
                 False,
                 f"target matches OUT-OF-SCOPE asset '{excluded_asset.value}'",
                 excluded_asset.value,
             )
-    # Precedence rule 3: only now may an in-scope asset authorize the target.
+    # Precedence rule 4: only now may an in-scope asset authorize the target.
     for allowed_asset in program.in_scope:
+        # Same reasoning as the exclusion loop above: an unusable asset denies rather than guesses.
+        try:
+            allowed_matches = asset_matches(allowed_asset, target)
+        except ValueError as exc:
+            return ScopeDecision(False, f"in-scope asset is unusable: {exc}")
         # First inclusion that covers the target wins.
-        if asset_matches(allowed_asset, target):
+        if allowed_matches:
             # Record which asset granted authorization; this is copied into the auth log.
             return ScopeDecision(True, f"in scope via '{allowed_asset.value}'", allowed_asset.value)
-    # Precedence rule 4: nothing matched, so deny. Default-deny is the whole point of the gate -
+    # Precedence rule 5: nothing matched, so deny. Default-deny is the whole point of the gate -
     # an unlisted target is refused rather than treated as unknown-but-probably-fine.
     return ScopeDecision(False, f"target not in '{program.name}' in-scope list")
 

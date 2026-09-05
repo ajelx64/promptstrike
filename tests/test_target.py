@@ -303,3 +303,36 @@ def test_redaction_leaves_a_legitimate_high_entropy_path_alone() -> None:
     target = "https://api.example.com/v1/8f14e45f-ceea-467a-9f45-1c2b3d4e5f60/chat"
     # So it must pass through untouched.
     assert redact_target(target) == target
+
+
+# Shapes that the enumerate-known-bad versions of the redactor let through untouched.
+FALL_THROUGH_TARGETS = [
+    "api.example.com/v1/chat?api_key=sk-LEAK",       # no scheme - was returned verbatim
+    "user:LEAK@api.example.com/v1/chat",             # no scheme, userinfo
+    "https://api.example.com/v1/chat?sk-LEAK",       # bare token, no "="
+    "https://api.example.com/v1/chat#sk-LEAK",       # bare token in the fragment
+    "https://api.example.com/v1/chat?a=1;api_key=LEAK",   # ";" separator
+    "https://api.example.com/v1/chat?%74oken=LEAK",  # percent-encoded key name
+    "https://api.example.com/v1/chat?x=%73%6b-LEAK",  # percent-encoded value prefix
+    "https://api.example.com/v1/x?x=AIzaSyLEAK",     # Google AI Studio key
+    "https://api.example.com/v1/AIzaSyLEAK/chat",    # same, in a path segment
+    "https://api.example.com/v1/hf_LEAK/chat",       # HuggingFace
+    "https://api.example.com/v1/xapp-1-LEAK/chat",   # Slack app-level
+]
+
+
+@pytest.mark.parametrize("target", FALL_THROUGH_TARGETS)
+def test_redaction_has_no_fall_through_path(target: str) -> None:
+    """Nothing short-circuits: every supported target shape is parsed and redacted."""
+    # Redact it the way the log, evidence, finding and report all now do.
+    redacted = redact_target(target)
+    # The canary must not survive.
+    assert "LEAK" not in redacted, f"credential survived redaction: {redacted}"
+
+
+def test_scheme_less_targets_round_trip_when_clean() -> None:
+    """The placeholder scheme used for parsing must never appear in the output."""
+    # A scheme-less target with nothing to redact must come back byte-identical.
+    assert redact_target("api.example.com/v1/chat") == "api.example.com/v1/chat"
+    # And a bare model token likewise.
+    assert redact_target("gpt-4o-mini") == "gpt-4o-mini"

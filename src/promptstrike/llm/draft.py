@@ -9,6 +9,7 @@ The Anthropic client is lazily imported and injectable, so tests and offline use
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -84,17 +85,28 @@ class Drafter(Protocol):
     def __call__(self, finding: Finding) -> DraftNarrative: ...
 
 
-def _truncate_evidence(value: str) -> str:
+# Matches either fence marker however it is spelled: any case, and any run of spaces,
+# underscores or hyphens between the words. An exact case-sensitive replace was not enough -
+# "untrusted-evidence-end", "UNTRUSTED EVIDENCE END" and "UNTRUSTED_EVIDENCE_END" all passed
+# through it verbatim, and the last is the shape the sanitiser's own output takes.
+_FENCE_MARKER_RE = re.compile(r"UNTRUSTED[-_\s]*EVIDENCE[-_\s]*(?:BEGIN|END)", re.IGNORECASE)
+
+
+def _defang(value: str) -> str:
     """Neutralise the fence markers, then cap the field.
 
+    Applied to EVERY field interpolated into the drafting prompt, not just the two evidence
+    fields. ``model`` and ``model_version`` come from the target's own JSON response body, so
+    they are attacker-controlled too - and because they are rendered ABOVE the fence, a marker
+    there placed hostile text outside it entirely, which is worse than a marker inside.
+
     Marker stripping comes first and is not optional: without it a hostile response can simply
-    emit ``UNTRUSTED-EVIDENCE-END`` and place its own text OUTSIDE the fence, where it is
-    structurally indistinguishable from operator-authored content. The cap then bounds cost,
-    latency, and the odds of an injection buried far from the instructions.
+    emit the END marker and place its own text where it is structurally indistinguishable from
+    operator-authored content. The cap then bounds cost, latency, and the odds of an injection
+    buried far from the instructions.
     """
-    # Defang any occurrence of the fence markers so only THIS function can open or close a fence.
-    for marker in (_FENCE_BEGIN, _FENCE_END):
-        value = value.replace(marker, marker.replace("-", "_") + "[neutralised]")
+    # Replace any spelling of either marker with an inert label.
+    value = _FENCE_MARKER_RE.sub("[neutralised-fence-marker]", value)
     # Short values pass through untouched, which is the common case.
     if len(value) <= _MAX_EVIDENCE_CHARS:
         return value
@@ -113,12 +125,15 @@ def _prompt(finding: Finding) -> str:
     the boundary explicit.
     """
     # Finding metadata is operator-authored, so it needs no fencing.
+    # EVERY interpolated value is defanged, including the ones above the fence. `model` and
+    # `model_version` are read straight from the target's response body, so treating them as
+    # trusted metadata was the hole: a marker in `model` broke out of the fence entirely.
     lines = [
-        f"Vulnerability: {finding.title}",
+        f"Vulnerability: {_defang(finding.title)}",
         f"OWASP-LLM category: {finding.category.value} ({taxonomy.title(finding.category)})",
-        f"Target: {finding.target}",
-        f"Model under test: {finding.model} {finding.model_version}".strip(),
-        f"CVSS v3.1: {finding.cvss_v31_score} ({finding.cvss_v31_vector})",
+        f"Target: {_defang(finding.target)}",
+        f"Model under test: {_defang(finding.model)} {_defang(finding.model_version)}".strip(),
+        f"CVSS v3.1: {finding.cvss_v31_score} ({_defang(finding.cvss_v31_vector)})",
         "",
         "Evidence transcript(s):",
         # Everything after this marker is data, never instruction.
@@ -127,9 +142,9 @@ def _prompt(finding: Finding) -> str:
     # Each transcript is numbered so the drafter can cite it without needing to quote it.
     for index, evidence in enumerate(finding.evidence, 1):
         # The prompt we sent - operator-authored, but fenced with the rest for a single boundary.
-        lines.append(f"[{index}] PROMPT: {_truncate_evidence(evidence.prompt)}")
+        lines.append(f"[{index}] PROMPT: {_defang(evidence.prompt)}")
         # The response - this is the attacker-controlled half.
-        lines.append(f"[{index}] RESPONSE: {_truncate_evidence(evidence.response)}")
+        lines.append(f"[{index}] RESPONSE: {_defang(evidence.response)}")
     # Close the fence. Safe because _truncate_evidence has already defanged any marker the
     # target tried to emit, so this is the only END in the assembled prompt.
     lines.append(_FENCE_END)

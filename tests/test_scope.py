@@ -254,3 +254,33 @@ def test_non_default_port_is_still_significant() -> None:
     decision = check(_program(), "https://api.example.com:8443/v1/chat")
     # It matches no endpoint asset; the domain asset still covers the host, which is correct.
     assert decision.matched != "https://api.example.com/v1"
+
+
+# Port spellings that do not canonicalize. Earlier versions let each of these fall through with
+# the authority UNCHANGED, which is fail-open: the carve-out missed and a broader in-scope asset
+# matched instead, while httpx resolved the target to the excluded resource anyway.
+UNCANONICALIZABLE_PORTS = [":443 ", ": 443", ":+443", ":0x1bb", ":99999", ":²"]
+
+
+@pytest.mark.parametrize("port_spelling", UNCANONICALIZABLE_PORTS)
+def test_uncanonicalizable_authority_is_denied(port_spelling: str) -> None:
+    """A target we cannot reduce to one canonical form is refused, not passed through."""
+    # The out-of-scope resource, spelled with an authority that will not normalize.
+    target = f"https://api.example.com{port_spelling}/v1/admin/keys"
+    # It must be denied - and the denial must not depend on which asset happened to match.
+    assert check(_program(), target).allowed is False
+
+
+def test_uncanonicalizable_target_does_not_raise_out_of_check() -> None:
+    """The refusal is a ScopeDecision, not an exception a caller has to know about."""
+    # A superscript passes str.isdigit() but explodes inside int(); it must not escape as one.
+    decision = check(_program(), "https://api.example.com:²/v1/chat")
+    assert decision.allowed is False
+    assert "canonicaliz" in decision.reason
+
+
+def test_model_and_host_targets_are_unaffected_by_port_parsing() -> None:
+    """A bare token containing a colon is not an authority and must still resolve."""
+    # "model:gpt-x" is a supported target spelling; its colon is not a port separator.
+    assert check(_program(), "model:gpt-x").allowed is True
+    assert check(_program(), "gpt-x").allowed is True

@@ -5,7 +5,7 @@
 - **Category:** {{ finding.category.value }} — {{ owasp_title }}
 - **CWE:** {{ finding.cwe | join(', ') }}
 - **Target:** {{ finding.target }}
-- **Model:** {{ finding.model }} {{ finding.model_version }}
+- **Model:** {{ finding.model | md_escape }} {{ finding.model_version | md_escape }}
 - **Generated:** {{ generated_date }}
 
 ## Summary
@@ -15,7 +15,7 @@
 {{ finding.description }}
 
 ## Steps to Reproduce
-{% for s in finding.steps_to_reproduce %}{{ loop.index }}. {{ s }}
+{% for step in finding.steps_to_reproduce %}{{ loop.index }}. {{ step | md_escape }}
 {% endfor %}
 ## Impact
 {{ finding.impact or '_(to be completed)_' }}

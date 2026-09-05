@@ -17,11 +17,12 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 from promptstrike.models import Evidence, Program
 from promptstrike.scope import ScopeError, check
@@ -97,12 +98,17 @@ _SECRET_QUERY_KEYS = (
 # heuristic: entropy would redact legitimate high-entropy path segments such as a run id or a
 # UUID endpoint, which would quietly destroy the audit trail this log exists to be.
 _SECRET_VALUE_PREFIXES = (
-    "sk-", "sk_", "pk_", "rk_",           # OpenAI / Stripe style
+    "sk-", "sk_", "pk_", "rk_",                             # OpenAI / Stripe style
     "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_",  # GitHub
-    "xoxb-", "xoxp-", "xoxa-", "xoxs-",   # Slack
-    "akia", "asia",                       # AWS access key ids (compared lower-cased)
-    "glpat-",                             # GitLab
-    "eyj",                                # a JWT's base64 "{"a..." header
+    "xoxb-", "xoxp-", "xoxa-", "xoxs-", "xapp-",            # Slack (incl. app-level tokens)
+    "akia", "asia", "agpa", "aida", "aroa", "anpa",         # AWS key ids (compared lower-cased)
+    "glpat-",                                               # GitLab
+    "aiza",                                                 # Google AI Studio / Gemini
+    "hf_",                                                  # HuggingFace
+    "shpat_", "shpss_",                                     # Shopify
+    "dop_v1_",                                              # DigitalOcean
+    "npm_",                                                 # npm
+    "eyj",                                                  # a JWT's base64 "{"a..." header
 )
 
 
@@ -119,35 +125,41 @@ _REDACTED = "REDACTED"
 
 
 def redact_target(target: str) -> str:
-    """Strip credentials from a target URL before it is written anywhere durable.
+    """Strip credentials from a target before it is written anywhere durable.
 
     The prompt is deliberately stored as a truncated hash so the authorization log can be handed
     to a program owner as a safe-harbor artifact - but the target sits beside it, and an endpoint
     written as ``https://user:secret@host/v1?api_key=...`` would put the operator's OWN
-    credentials into that same file, into evidence transcripts, into the findings database, and
-    into the report submitted to a third party.
+    credentials into that file, the evidence transcripts, the findings database, and the report
+    submitted to a third party.
 
-    Removes, in order: userinfo, secret-bearing query values, secret-bearing fragment values, and
-    any path segment carrying a recognised credential prefix. Redaction is visible rather than
-    silent - a fixed marker records that a credential WAS present, which is itself worth knowing
-    when reading an audit trail.
+    Removes userinfo, secret-bearing query and fragment values, and path segments carrying a
+    recognised credential prefix. Redaction is visible rather than silent - a fixed marker
+    records that a credential WAS present, which is itself worth knowing in an audit trail.
 
-    Anything that does not parse as a URL is returned unchanged. This is a redactor, not a
-    validator, and it must never be the reason a send fails.
+    Two design notes, both learned from getting this wrong:
+
+    * **Nothing short-circuits.** An earlier version returned a scheme-less target untouched,
+      which leaked completely - and a bare ``host/path`` is a first-class supported target form
+      here, not an edge case. Everything is parsed.
+    * **The prefix list is a maintained asset, not a completeness claim.** A bespoke credential
+      format with no recognisable prefix, sitting in an opaque path segment, is undetectable by
+      this design. That is a deliberate trade: an entropy heuristic would redact legitimate
+      high-entropy segments such as a run id, quietly destroying the audit trail this exists to
+      be. Callers must not treat a redacted target as *proven* free of secrets.
     """
-    # A target with no scheme (a bare host, or a model token) carries no userinfo, query or
-    # fragment, so there is nothing to redact and nothing to risk mangling.
-    if "://" not in target:
-        return target
-    # Parse once, properly, rather than hand-splitting: urlsplit knows where the authority ends
-    # and separates the query and fragment, which the previous string-partition version did not.
-    parts = urlsplit(target)
+    # Parse unconditionally. urlsplit needs a scheme to recognise an authority, so a scheme-less
+    # target gets a placeholder that is removed again before returning - the alternative, an
+    # early return, is what leaked.
+    had_scheme = "://" in target
+    parseable = target if had_scheme else "placeholder://" + target
+    parts = urlsplit(parseable)
     # Userinfo is credentials by definition. netloc keeps the host and any port.
     netloc = parts.netloc
     if "@" in netloc:
         # Split on the LAST "@" since userinfo may itself contain one.
         netloc = _REDACTED + "@" + netloc.rsplit("@", 1)[1]
-    # Redact any path segment that looks like a credential (an API key pasted into the path).
+    # Redact any path segment carrying a recognised credential prefix (a key pasted into a path).
     path = "/".join(
         _REDACTED if _looks_like_secret(segment) else segment
         for segment in parts.path.split("/")
@@ -156,32 +168,42 @@ def redact_target(target: str) -> str:
     # in the fragment - so the same redaction applies to each.
     query = _redact_parameter_bag(parts.query)
     fragment = _redact_parameter_bag(parts.fragment)
-    # Reassemble from the sanitized parts.
-    return urlunsplit((parts.scheme, netloc, path, query, fragment))
+    # Reassemble, then drop the placeholder scheme if we added one.
+    rebuilt = urlunsplit((parts.scheme, netloc, path, query, fragment))
+    return rebuilt if had_scheme else rebuilt.removeprefix("placeholder://")
 
 
 def _redact_parameter_bag(raw: str) -> str:
-    """Redact secret-bearing values in a ``k=v&k=v`` string (a query or a fragment)."""
+    """Redact secret-bearing values in a ``k=v`` bag (a query string or a fragment)."""
     # Nothing to do for an absent or empty bag.
     if not raw:
         return raw
-    # Rebuilt parameter list, preserving order and unknown keys so the record stays readable.
+    # Rebuilt parameters, preserving order and unknown keys so the record stays readable.
     redacted_parameters = []
-    # Split on "&"; this is a textual redaction, so full parsing is unnecessary.
-    for parameter in raw.split("&"):
+    # Split on BOTH separators: "&" is conventional, but ";" is accepted by several servers and
+    # splitting on "&" alone let "?a=1;api_key=..." through as one unrecognised parameter.
+    for parameter in re.split(r"[&;]", raw):
         # Split each parameter into name and value at the first "=".
         name, equals, value = parameter.partition("=")
-        # A bare flag with no value has nothing to redact.
+        # A bare token with no "=" still has to be checked - "?sk-LIVE..." is a credential even
+        # though it parses as a nameless flag.
         if not equals:
-            redacted_parameters.append(parameter)
+            redacted_parameters.append(
+                _REDACTED if _looks_like_secret(unquote(parameter)) else parameter
+            )
             continue
-        # Redact when the NAME looks credential-bearing, or the VALUE carries a known prefix -
-        # the latter catches an unusual parameter name holding an obvious secret.
-        if any(marker in name.lower() for marker in _SECRET_QUERY_KEYS) or _looks_like_secret(value):
+        # Percent-decode BOTH halves before matching. Comparing the raw text let "%74oken=" hide
+        # a secret-bearing name and "%73%6b-" hide a secret-bearing value.
+        decoded_name = unquote(name).lower()
+        decoded_value = unquote(value)
+        # Redact when the NAME looks credential-bearing, or the VALUE carries a known prefix.
+        if any(marker in decoded_name for marker in _SECRET_QUERY_KEYS) or _looks_like_secret(
+            decoded_value
+        ):
             redacted_parameters.append(f"{name}={_REDACTED}")
         else:
             redacted_parameters.append(parameter)
-    # Reassemble the bag.
+    # Reassemble with the conventional separator.
     return "&".join(redacted_parameters)
 
 class AuthLog:
