@@ -162,7 +162,8 @@ class WorkbenchApp(App):
         # The three tabs the operator switches between; Findings is shown first.
         with TabbedContent(initial="tab-findings"):
             with TabPane("Findings", id="tab-findings"):
-                # The row-selectable table of every finding; row_type lets arrow keys move it.
+                # The table of every finding; cursor_type="row" makes arrow keys move a whole
+                # row rather than a single cell.
                 yield DataTable(id="findings", cursor_type="row")
             with TabPane("Detail", id="tab-detail"):
                 # Summary and checklist panes sit side by side above the remediation editor.

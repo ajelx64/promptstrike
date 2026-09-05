@@ -5,7 +5,7 @@ the review gate, dry-run defaults, rollback docs. Only the deltas below are spec
 project.
 
 **That ruleset is deliberately NOT vendored into this repo, and must not be re-added.** This
-repo is public; the canon names other projects and records which security controls are and are
+repo is intended to go public; the canon names other projects and records which security controls are and are
 not wired into their CI, so committing it here would disclose posture about repos other than
 this one. Cloud sessions receive the process via account-enabled skills instead. The workspace's
 canon-sync tooling enforces this: it excludes public repos, and its tests assert this repo is one.
@@ -24,8 +24,10 @@ never become a mass-targeting or auto-submitting tool.
   any request leaves the process. Do not add code paths that bypass `scope.scope_check()`.
 - **No auto-submission (hard gate).** The tool must never POST a finding to a bug-bounty platform's API.
   It produces reports for the operator to submit manually. Human-in-the-loop is a design invariant.
-- **`DRY_RUN=true` is the default.** Live target traffic requires an explicit `--live` flag *and* a
-  passing scope check *and* active rate-limiting. Never hardcode `dry_run=False`.
+- **`DRY_RUN=true` is the default.** Live target traffic requires the global switch to be lifted
+  (`PROMPTSTRIKE_DRY_RUN=false`) *and* an explicit `--live` flag *and* a passing scope check *and*
+  active rate-limiting. The switch is enforced in `TargetClient.send` — the chokepoint every prompt
+  passes through — not only in the CLI. Never hardcode `dry_run=False` or `allow_live=True`.
 - **No-DoS.** All target traffic is rate-limited (`PROMPTSTRIKE_RATE_LIMIT_RPS`); abort on error spikes.
 - **Sensitive local state never committed.** `data/` (program defs, evidence transcripts, findings DB,
   generated reports) is gitignored — it can contain target details and working PoCs.

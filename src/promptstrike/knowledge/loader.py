@@ -208,7 +208,9 @@ def load_pack(root: str | Path) -> KnowledgePack:
 @lru_cache(maxsize=1)
 def pack() -> KnowledgePack:
     """The shipped pack, loaded once per process."""
-    # Cached (maxsize=1): every caller in the process shares one validated, immutable pack instance.
+    # Cached (maxsize=1): every caller in the process shares ONE validated pack instance.
+    # It is a shared mutable singleton, not a frozen one - these are plain BaseModels - so a
+    # caller that mutates the returned pack changes it for everything else in the process.
     return load_pack(_data_dir())
 
 

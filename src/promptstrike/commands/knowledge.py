@@ -138,7 +138,10 @@ def map_category(
     except ValueError:
         typer.echo(
             f"unknown category {category!r}; expected one of "
-            f"{', '.join(category.value for category in OwaspLLM)}",
+            # `member` rather than `category`: the enclosing parameter is also named
+            # `category` and is a str, so reusing it here reads like an AttributeError even
+            # though the generator's own scope makes it work.
+            f"{', '.join(member.value for member in OwaspLLM)}",
             err=True,
         )
         raise typer.Exit(code=2) from None

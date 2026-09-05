@@ -175,7 +175,7 @@ routing around it silently removes every one of them.
 
 ## Tests
 
-`pytest` from the repo root. 199 tests, no network access required — the transport, the rate
+`pytest` from the repo root. 233 tests, no network access required — the transport, the rate
 limiter's clock, and its sleep are all injectable, so live behavior is tested deterministically.
 
 `tests/test_scope.py` is the one to read first if you are auditing the safety model: it is where the

@@ -228,3 +228,29 @@ def test_ordinary_program_names_still_work() -> None:
     # Normal names are accepted; the file simply does not exist yet.
     assert store.exists("example") is False
     assert store.exists("google-ai-vrp-2026") is False
+
+
+# Port spellings that httpx resolves to the https default, and so to the same wire request.
+# A string comparison against "443" missed every one of these, which let a target walk past an
+# out-of-scope carve-out and match a broader in-scope asset instead.
+DEFAULT_PORT_SPELLINGS = ["", ":", ":443", ":0443", ":00443"]
+
+
+@pytest.mark.parametrize("port_spelling", DEFAULT_PORT_SPELLINGS)
+def test_default_port_spellings_cannot_evade_a_carve_out(port_spelling: str) -> None:
+    """Every spelling of the default port must resolve to the same scope decision."""
+    # The out-of-scope resource, written with this spelling of the port.
+    target = f"https://api.example.com{port_spelling}/v1/admin/keys"
+    # It must be denied regardless of how the port is written.
+    decision = check(_program(), target)
+    assert decision.allowed is False, f"scope bypass via port spelling {port_spelling!r}"
+    # And denied by the carve-out, not merely by falling through to default-deny.
+    assert "OUT-OF-SCOPE" in decision.reason
+
+
+def test_non_default_port_is_still_significant() -> None:
+    """Normalizing the default port must not erase a genuinely different one."""
+    # Port 8443 is not the https default, so this is a different origin than the in-scope asset.
+    decision = check(_program(), "https://api.example.com:8443/v1/chat")
+    # It matches no endpoint asset; the domain asset still covers the host, which is correct.
+    assert decision.matched != "https://api.example.com/v1"

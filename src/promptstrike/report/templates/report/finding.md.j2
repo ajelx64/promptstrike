@@ -26,17 +26,19 @@
 ## Evidence
 {% for ev in finding.evidence %}
 ### Exchange {{ loop.index }}
+{% set prompt_fence = ev.prompt | md_fence %}
+{% set response_fence = ev.response | md_fence %}
 **Prompt:**
 
-~~~text
+{{ prompt_fence }}text
 {{ ev.prompt }}
-~~~
+{{ prompt_fence }}
 
 **Response:**
 
-~~~text
+{{ response_fence }}text
 {{ ev.response }}
-~~~
+{{ response_fence }}
 {% endfor %}
 {% if finding.cvss_v40_vector %}
 > CVSS v4.0 vector: `{{ finding.cvss_v40_vector }}` (score via FIRST calculator)

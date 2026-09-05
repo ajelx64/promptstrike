@@ -70,10 +70,16 @@ def promote(
         run_id=result.run_id,
         program=result.program,
         platform=resolved_platform,
-        title=title or f"{taxonomy.title(category)} in {result.target}",
+        # Redacted like every other consumer of the target. This line is why the auto-
+        # generated title used to carry credentials into the HTML and PDF reports while the
+        # `target` field three lines below was clean.
+        title=title or f"{taxonomy.title(category)} in {redact_target(result.target)}",
         category=category,
-        # Redacted at promotion, so no downstream consumer - report, database, TUI - ever
-        # holds the credential form. This is the last point where the raw target exists.
+        # Redacted at promotion. Every field derived from the target is redacted the same
+        # way - title, description and reproduction steps above - so no downstream consumer
+        # reconstructs the credential form from any of them. Note the redactor removes
+        # userinfo, secret-bearing query/fragment values and known credential prefixes; it
+        # is not a guarantee against a secret embedded in an arbitrary path segment.
         target=redact_target(result.target),
         model=_first_model(result),
         summary=result.detail,

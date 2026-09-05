@@ -223,7 +223,9 @@ class Evidence(BaseModel):
     # Round-trip time; None on a dry run, which never measured one.
     latency_ms: int | None = None
     # Transport details plus the "dry_run" flag and the target, which TargetClient.send passes
-    # through redact_target first - so the copy of the target stored HERE has no credentials in it.
+    # through redact_target first. That removes userinfo, secret-bearing query and fragment
+    # values, and path segments carrying a known credential prefix - it is not a guarantee
+    # against an unrecognised secret embedded in an arbitrary path segment.
     metadata: dict = Field(default_factory=dict)
 
 
@@ -279,9 +281,10 @@ class Finding(BaseModel):
     severity: Severity = Severity.medium
     # CWE ids cited in the report; derived from the category when left empty.
     cwe: list[str] = Field(default_factory=list)
-    # The affected endpoint/host/model, carried over from ProbeResult.target as the operator
-    # supplied it. NOT redacted here - only the auth log and Evidence.metadata go through
-    # redact_target - so a target written with inline credentials would reach the report.
+    # The affected endpoint/host/model, carried over from ProbeResult.target and redacted at
+    # promotion (see finding.promote), along with every other field derived from it - title,
+    # description and reproduction steps - because this object is rendered into the report that
+    # is submitted to a third party.
     target: str = ""
     # Model that exhibited the issue, and its build if the target reported one.
     model: str = ""

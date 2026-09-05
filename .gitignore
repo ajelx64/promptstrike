@@ -31,3 +31,9 @@ reports/
 *.db
 *.sqlite3
 *.pdf
+
+# Coverage database. Binary, and it embeds ABSOLUTE paths of the machine that produced it —
+# which is how it slipped past a text-only leak scan (grep -I skips binary files).
+.coverage
+.coverage.*
+htmlcov/

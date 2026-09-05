@@ -265,3 +265,41 @@ async def test_credentials_never_reach_the_authorization_log(tmp_path) -> None:
     assert "SuperSecret123" not in logged
     # And the entry must still identify the target host, or the audit trail is useless.
     assert "api.example.com" in logged
+
+
+# Credential shapes the first version of the redactor missed entirely.
+CREDENTIAL_BEARING_TARGETS = [
+    "https://api.example.com/v1/chat?auth=sk-SECRET123",
+    "https://api.example.com/v1/chat?bearer=sk-SECRET123",
+    "https://api.example.com/v1/chat?session=sk-SECRET123",
+    "https://api.example.com/v1/chat?credential=sk-SECRET123",
+    "https://api.example.com/v1/chat?code=sk-SECRET123",
+    "https://api.example.com/v1/chat#access_token=sk-SECRET123",
+    "https://api.example.com/v1/sk-SECRET123/chat",
+    "https://api.example.com/v1/AKIAREALKEY99/chat",
+    "https://user:sk-SECRET123@api.example.com/v1/chat",
+]
+
+
+@pytest.mark.parametrize("target", CREDENTIAL_BEARING_TARGETS)
+def test_redaction_covers_fragments_paths_and_oauth_parameter_names(target: str) -> None:
+    """A credential must not survive redaction wherever it is written in the URL."""
+    # Redact the target the way the log, evidence and finding all now do.
+    redacted = redact_target(target)
+    # Neither sample secret may appear in the result.
+    assert "SECRET123" not in redacted
+    assert "AKIAREALKEY99" not in redacted
+    # The host must survive, or the audit record stops identifying what was tested.
+    assert "api.example.com" in redacted
+
+
+def test_redaction_leaves_a_legitimate_high_entropy_path_alone() -> None:
+    """Only recognised credential prefixes are redacted, not any long path segment.
+
+    A run id or a UUID endpoint is high-entropy but not a secret; redacting it would quietly
+    destroy the audit trail this log exists to be.
+    """
+    # A UUID-shaped path segment carries no credential prefix.
+    target = "https://api.example.com/v1/8f14e45f-ceea-467a-9f45-1c2b3d4e5f60/chat"
+    # So it must pass through untouched.
+    assert redact_target(target) == target

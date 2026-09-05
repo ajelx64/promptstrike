@@ -49,6 +49,35 @@ class ReportGenerator:
             loader=FileSystemLoader(str(templates_dir or _templates_dir())),
             autoescape=select_autoescape(["html", "xml"]),
         )
+        # Exposed to the Markdown template so evidence can be fenced with a delimiter longer
+        # than anything the target returned. Autoescape cannot help there - Markdown is not
+        # HTML - so this is what stops attacker-controlled output escaping its code block.
+        self.env.filters["md_fence"] = self._markdown_fence_for
+
+    @staticmethod
+    def _markdown_fence_for(text: str) -> str:
+        """Return a ``~`` fence guaranteed to be longer than any run of ``~`` inside ``text``.
+
+        The Markdown template is deliberately NOT auto-escaped, and target responses are
+        attacker-controlled. A fixed ``~~~`` fence is escapable: a response containing ``~~~``
+        closes the block early, after which its content renders as live Markdown in the triager's
+        browser - images, links and headings attributed to the operator who submitted the report.
+        Sizing the fence to the payload removes that, and keeps everything inside literal.
+        """
+        # Longest run of "~" seen so far, and the run currently being counted.
+        longest_run = 0
+        current_run = 0
+        # Walk the text once; no regex needed for a single-character run scan.
+        for character in text:
+            if character == "~":
+                # Extend the current run and remember it if it is the longest.
+                current_run += 1
+                longest_run = max(longest_run, current_run)
+            else:
+                # Any other character ends the run.
+                current_run = 0
+        # At least three, and always one longer than anything in the payload.
+        return "~" * max(3, longest_run + 1)
 
     def _framework_context(self, finding: Finding) -> tuple[list[dict], list[str]]:
         """Resolve a finding's framework refs to titles, and collect only the sources it uses.

@@ -75,11 +75,17 @@ src/promptstrike/
   config.py        settings (DRY_RUN, rate limit, data dir)
   models.py        Program, ScopeAsset, Probe, ProbeResult/Evidence, Finding
   scope.py         program registry + scope enforcement (the safety spine)
-  finding.py       promote evidence -> Finding, CVSS 3.1/4.0, CWE/OWASP-LLM mapping
+  finding.py       promote evidence -> Finding, CVSS 3.1 scoring + 4.0 vector validation,
+                   CWE/OWASP-LLM mapping
   triage.py        dedup vs local history + pre-submission checklist linter
   llm/             target.py (in-scope, rate-limited client) + draft.py (Claude narrative)
   probes/          engine.py, detectors.py, pack/*.yaml (the probe library)
-  report/          generator.py (Jinja2+WeasyPrint), profiles/*, templates/report/*.html
+  report/          generator.py (Jinja2+WeasyPrint), profiles/*, templates/report/*
+  knowledge/       vendored offline AI-security reference pack (OWASP, ATLAS, ...)
+  storage.py       run evidence (JSON files) + findings (SQLite)
+  taxonomy.py      OWASP LLM Top 10 ids, titles, CWE defaults
+  commands/        one module per CLI command group
+  tui/             optional Textual triage/report workbench
 data/              gitignored: findings DB, program defs, evidence transcripts, reports
 ```
 

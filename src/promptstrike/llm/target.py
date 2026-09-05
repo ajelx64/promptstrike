@@ -21,6 +21,7 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from promptstrike.models import Evidence, Program
 from promptstrike.scope import ScopeError, check
@@ -85,7 +86,32 @@ class RateLimiter:
 
 # Query parameters whose VALUE is a credential rather than a routing detail. Matched as a
 # substring on the lower-cased key, so "x-api-key" and "apiKey" are both caught.
-_SECRET_QUERY_KEYS = ("key", "token", "secret", "password", "passwd", "pwd", "sig", "signature")
+_SECRET_QUERY_KEYS = (
+    "key", "token", "secret", "password", "passwd", "pwd", "sig", "signature",
+    # Added after review: OAuth and session-bearing names that the original list missed.
+    "auth", "bearer", "session", "credential", "code", "access", "refresh",
+)
+
+# Prefixes that identify a credential no matter where it appears, including inside a path
+# segment. Deliberately a fixed list of well-known issuer formats rather than an entropy
+# heuristic: entropy would redact legitimate high-entropy path segments such as a run id or a
+# UUID endpoint, which would quietly destroy the audit trail this log exists to be.
+_SECRET_VALUE_PREFIXES = (
+    "sk-", "sk_", "pk_", "rk_",           # OpenAI / Stripe style
+    "ghp_", "gho_", "ghu_", "ghs_", "ghr_", "github_pat_",  # GitHub
+    "xoxb-", "xoxp-", "xoxa-", "xoxs-",   # Slack
+    "akia", "asia",                       # AWS access key ids (compared lower-cased)
+    "glpat-",                             # GitLab
+    "eyj",                                # a JWT's base64 "{"a..." header
+)
+
+
+def _looks_like_secret(value: str) -> bool:
+    """True when a value carries a recognisable credential prefix."""
+    # Compare lower-cased so AKIA/akia and eyJ/eyj both match.
+    lowered = value.lower()
+    # Any known issuer prefix is treated as a credential wherever it appears.
+    return any(lowered.startswith(prefix) for prefix in _SECRET_VALUE_PREFIXES)
 
 # What a redacted value is replaced with. A fixed marker rather than deletion, so the log still
 # shows that a credential WAS present - which is itself worth knowing when reading an audit trail.
@@ -95,51 +121,68 @@ _REDACTED = "REDACTED"
 def redact_target(target: str) -> str:
     """Strip credentials from a target URL before it is written anywhere durable.
 
-    The prompt is carefully hashed so the authorization log can be handed to a program owner as a
-    safe-harbor artifact - but the target sits beside it, and an endpoint written as
-    ``https://user:secret@host/v1?api_key=...`` would put the operator's own credentials in that
-    same file, and in the evidence transcripts and generated reports. Sanitizing the prompt while
-    logging the target verbatim defeats the effort spent on the prompt.
+    The prompt is deliberately stored as a truncated hash so the authorization log can be handed
+    to a program owner as a safe-harbor artifact - but the target sits beside it, and an endpoint
+    written as ``https://user:secret@host/v1?api_key=...`` would put the operator's OWN
+    credentials into that same file, into evidence transcripts, into the findings database, and
+    into the report submitted to a third party.
 
-    Returns the target with userinfo removed and secret-bearing query values replaced. Anything
-    that does not parse as a URL is returned unchanged - this is a redactor, not a validator, and
-    it must never be the reason a send fails.
+    Removes, in order: userinfo, secret-bearing query values, secret-bearing fragment values, and
+    any path segment carrying a recognised credential prefix. Redaction is visible rather than
+    silent - a fixed marker records that a credential WAS present, which is itself worth knowing
+    when reading an audit trail.
+
+    Anything that does not parse as a URL is returned unchanged. This is a redactor, not a
+    validator, and it must never be the reason a send fails.
     """
-    # A target with no scheme (a bare host, or a model token) carries no userinfo or query.
+    # A target with no scheme (a bare host, or a model token) carries no userinfo, query or
+    # fragment, so there is nothing to redact and nothing to risk mangling.
     if "://" not in target:
         return target
-    # Split off the scheme so the authority can be inspected on its own.
-    scheme, _, remainder = target.partition("://")
-    # Separate the authority from everything after the first slash.
-    authority, slash, path_and_query = remainder.partition("/")
-    # Userinfo is credentials by definition; drop it and record that it was there.
-    if "@" in authority:
+    # Parse once, properly, rather than hand-splitting: urlsplit knows where the authority ends
+    # and separates the query and fragment, which the previous string-partition version did not.
+    parts = urlsplit(target)
+    # Userinfo is credentials by definition. netloc keeps the host and any port.
+    netloc = parts.netloc
+    if "@" in netloc:
         # Split on the LAST "@" since userinfo may itself contain one.
-        authority = _REDACTED + "@" + authority.rsplit("@", 1)[1]
-    # Separate the query string, if any, from the path.
-    path, question, query = path_and_query.partition("?")
-    # Redact the value of any parameter whose name looks credential-bearing.
-    if query:
-        # Rebuilt parameter list, preserving order and unknown keys.
-        redacted_params = []
-        # Split on "&" - this is a textual redaction, so no need to fully parse.
-        for parameter in query.split("&"):
-            # Split each parameter into name and value at the first "=".
-            name, equals, _value = parameter.partition("=")
-            # A parameter with no value has nothing to redact.
-            if not equals:
-                redacted_params.append(parameter)
-                continue
-            # Replace the value when the name looks like it carries a secret.
-            if any(marker in name.lower() for marker in _SECRET_QUERY_KEYS):
-                redacted_params.append(f"{name}={_REDACTED}")
-            else:
-                redacted_params.append(parameter)
-        # Reassemble the query string.
-        query = "&".join(redacted_params)
-    # Put the URL back together from its sanitized parts.
-    return scheme + "://" + authority + slash + path + question + query
+        netloc = _REDACTED + "@" + netloc.rsplit("@", 1)[1]
+    # Redact any path segment that looks like a credential (an API key pasted into the path).
+    path = "/".join(
+        _REDACTED if _looks_like_secret(segment) else segment
+        for segment in parts.path.split("/")
+    )
+    # Query and fragment are both key=value bags in practice - OAuth implicit flow returns tokens
+    # in the fragment - so the same redaction applies to each.
+    query = _redact_parameter_bag(parts.query)
+    fragment = _redact_parameter_bag(parts.fragment)
+    # Reassemble from the sanitized parts.
+    return urlunsplit((parts.scheme, netloc, path, query, fragment))
 
+
+def _redact_parameter_bag(raw: str) -> str:
+    """Redact secret-bearing values in a ``k=v&k=v`` string (a query or a fragment)."""
+    # Nothing to do for an absent or empty bag.
+    if not raw:
+        return raw
+    # Rebuilt parameter list, preserving order and unknown keys so the record stays readable.
+    redacted_parameters = []
+    # Split on "&"; this is a textual redaction, so full parsing is unnecessary.
+    for parameter in raw.split("&"):
+        # Split each parameter into name and value at the first "=".
+        name, equals, value = parameter.partition("=")
+        # A bare flag with no value has nothing to redact.
+        if not equals:
+            redacted_parameters.append(parameter)
+            continue
+        # Redact when the NAME looks credential-bearing, or the VALUE carries a known prefix -
+        # the latter catches an unusual parameter name holding an obvious secret.
+        if any(marker in name.lower() for marker in _SECRET_QUERY_KEYS) or _looks_like_secret(value):
+            redacted_parameters.append(f"{name}={_REDACTED}")
+        else:
+            redacted_parameters.append(parameter)
+    # Reassemble the bag.
+    return "&".join(redacted_parameters)
 
 class AuthLog:
     """Append-only JSONL authorization log — a compliance/safe-harbor artifact per run."""
@@ -313,7 +356,8 @@ class TargetClient:
         # Step 1 - evaluate scope BEFORE any transport work. check() never sends anything itself,
         # so nothing has touched the network at this point regardless of the verdict.
         decision = check(self.program, target)
-        # Log the attempt (denied attempts are logged too, for audit).
+        # Step 2 - log the attempt. Denied attempts are logged too: the log's value as a
+        # safe-harbor artifact comes from showing what was REFUSED, not only what was sent.
         self.auth_log.record(
             program=self.program.name,
             target=target,

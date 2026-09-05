@@ -119,12 +119,12 @@ def _remove_dot_segments(path: str) -> str:
             continue
         # Anything else is a real segment and is kept.
         resolved.append(segment)
-    # Re-join with a single leading slash; the caller strips the leading slash for hosts.
+    # Join without a leading slash - the caller re-adds one when the path is non-empty.
     return "/".join(resolved)
 
 
 def _norm_endpoint(value: str) -> str:
-    """Reduce a URL or ``host/path`` string to the exact form the transport will request.
+    """Reduce a URL or ``host/path`` string to the form the transport will request.
 
     The gate compares strings; the transport (httpx) canonicalizes before sending. If the two
     disagree, an out-of-scope carve-out can be walked around by spelling the same resource
@@ -154,13 +154,28 @@ def _norm_endpoint(value: str) -> str:
     if "@" in authority:
         # Take the part after the LAST "@", since userinfo may itself contain one.
         authority = authority.rsplit("@", 1)[1]
-    # Remove the port when it is the scheme's default, so host and host:443 compare equal.
+    # Normalize the port NUMERICALLY, not as text. A string compare against "443" missed
+    # every other spelling of the same port - an empty ":", and zero-padded ":0443"/":00443" -
+    # each of which httpx resolves to the default port, producing a wire request identical to
+    # the carve-out while the gate saw a different string and allowed it.
     if ":" in authority:
-        # Split the port off the host.
-        host_only, _, port = authority.rpartition(":")
-        # Only strip when we know the scheme and the port is that scheme's default.
-        if host_only and port == _DEFAULT_PORTS.get(scheme):
-            authority = host_only
+        # Split the port off the host. For a bracketed IPv6 literal with no port this yields a
+        # non-numeric right-hand side, which falls through untouched below.
+        host_only, _, port_text = authority.rpartition(":")
+        if host_only:
+            # An empty port means "use the scheme default", so it is equivalent to no port.
+            if port_text == "":
+                authority = host_only
+            elif port_text.isdigit():
+                # Compare as an integer so 443, 0443 and 00443 are one value.
+                port_number = int(port_text)
+                if str(port_number) == _DEFAULT_PORTS.get(scheme):
+                    # Default port carries no meaning; drop it.
+                    authority = host_only
+                else:
+                    # Non-default port is significant, but store it canonically so a padded
+                    # spelling cannot differ from its plain form.
+                    authority = f"{host_only}:{port_number}"
     # Restore the leading slash that partition() consumed, when there was a path at all.
     path = slash + path
     # Decode percent-escapes so %61dmin is compared as admin.
@@ -179,9 +194,15 @@ def _norm_endpoint(value: str) -> str:
 def asset_matches(asset: ScopeAsset, target: str) -> bool:
     """Does ``target`` fall under ``asset`` given the asset's type? Boundary-safe (no over-match).
 
-    Endpoint matching is intentionally scheme- and port-agnostic (http/https collapse; an explicit
-    port is not matched against a portless asset). Both are the fail-closed direction for an
-    authorization gate — when in doubt, deny.
+    Endpoint matching is scheme-agnostic (http/https collapse) and normalizes the scheme's
+    default port so every spelling of it compares equal.
+
+    **Read the safety polarity carefully.** This one function serves BOTH the in-scope and the
+    out-of-scope list, and narrowness has opposite consequences for each: a narrow match is
+    conservative for an in-scope asset (fewer things authorized) but fail-OPEN for an
+    out-of-scope carve-out (fewer things excluded, so a broader in-scope asset then matches
+    instead). A carve-out must therefore match at least as broadly as the transport resolves,
+    which is why the canonicalization above exists and why it must not be loosened.
     """
     # Split the target into the pieces each asset type needs; raw keeps the original spelling.
     host, _path, raw = _split_target(target)
@@ -301,9 +322,9 @@ class ProgramStore:
         return name
 
     def _path(self, name: str) -> Path:
-        # One file per program, named by the program's slug. add() always passes a Program.name,
-        # which the model has already validated against the slug grammar; get()/exists() take a
-        # raw operator-supplied string, so this is not itself a path-traversal guard.
+        # One file per program, named by the program's slug. add() passes an already-validated
+        # Program.name, but get()/exists() take a raw operator-supplied string - so this method
+        # IS the traversal guard for those paths, not the model.
         # Validate before the join; this is the only place a name becomes a path.
         return self.dir / f"{self._validated_name(name)}.yaml"
 

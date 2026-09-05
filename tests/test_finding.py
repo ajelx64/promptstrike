@@ -133,3 +133,33 @@ def test_ordinary_run_ids_still_work(tmp_path) -> None:
     store = RunStore(tmp_path)
     # A typical generated run id; the file simply does not exist yet.
     assert store.get("a1b2c3d4e5f6") is None
+
+
+def test_promotion_redacts_the_auto_generated_title() -> None:
+    """The auto-generated title is derived from the target and must be redacted too.
+
+    This was a real leak: `target` was redacted while `title` beside it interpolated the raw
+    value, so credentials reached the HTML and PDF reports - the artifacts submitted to a
+    third party - on the default `finding promote` path.
+    """
+    # A run whose target carries both a password and an API key.
+    result = ProbeResult(
+        run_id="r1",
+        probe_id="p",
+        program="prog",
+        target="https://alice:sup3rs3cr3t@api.example.com/v1/chat?api_key=AKIAREALKEY99",
+        category=OwaspLLM.LLM01,
+        triggered=True,
+        detector="contains_any",
+        dry_run=False,
+        evidence=[Evidence(prompt="x", response="y")],
+    )
+    # Promote it without supplying an explicit title, so the auto-generated one is used.
+    finding = promote(result)
+    # Neither secret may appear in the title...
+    assert "sup3rs3cr3t" not in finding.title
+    assert "AKIAREALKEY99" not in finding.title
+    # ...nor anywhere else on the finding.
+    assert "sup3rs3cr3t" not in finding.description
+    # The title must still name the target host, or it stops being a useful title.
+    assert "api.example.com" in finding.title

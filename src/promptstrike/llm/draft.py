@@ -53,6 +53,10 @@ _SYSTEM = (
 # odds of a successful injection buried far from the instructions.
 _MAX_EVIDENCE_CHARS = 4000
 
+# The fence markers, named once so the stripping below and the prompt assembly cannot drift apart.
+_FENCE_BEGIN = "UNTRUSTED-EVIDENCE-BEGIN"
+_FENCE_END = "UNTRUSTED-EVIDENCE-END"
+
 
 @dataclass
 class DraftNarrative:
@@ -81,7 +85,16 @@ class Drafter(Protocol):
 
 
 def _truncate_evidence(value: str) -> str:
-    """Cap one evidence field, marking the cut so the drafter is not misled about completeness."""
+    """Neutralise the fence markers, then cap the field.
+
+    Marker stripping comes first and is not optional: without it a hostile response can simply
+    emit ``UNTRUSTED-EVIDENCE-END`` and place its own text OUTSIDE the fence, where it is
+    structurally indistinguishable from operator-authored content. The cap then bounds cost,
+    latency, and the odds of an injection buried far from the instructions.
+    """
+    # Defang any occurrence of the fence markers so only THIS function can open or close a fence.
+    for marker in (_FENCE_BEGIN, _FENCE_END):
+        value = value.replace(marker, marker.replace("-", "_") + "[neutralised]")
     # Short values pass through untouched, which is the common case.
     if len(value) <= _MAX_EVIDENCE_CHARS:
         return value
@@ -109,7 +122,7 @@ def _prompt(finding: Finding) -> str:
         "",
         "Evidence transcript(s):",
         # Everything after this marker is data, never instruction.
-        "UNTRUSTED-EVIDENCE-BEGIN",
+        _FENCE_BEGIN,
     ]
     # Each transcript is numbered so the drafter can cite it without needing to quote it.
     for index, evidence in enumerate(finding.evidence, 1):
@@ -117,8 +130,9 @@ def _prompt(finding: Finding) -> str:
         lines.append(f"[{index}] PROMPT: {_truncate_evidence(evidence.prompt)}")
         # The response - this is the attacker-controlled half.
         lines.append(f"[{index}] RESPONSE: {_truncate_evidence(evidence.response)}")
-    # Close the fence so the boundary is unambiguous even with odd content inside.
-    lines.append("UNTRUSTED-EVIDENCE-END")
+    # Close the fence. Safe because _truncate_evidence has already defanged any marker the
+    # target tried to emit, so this is the only END in the assembled prompt.
+    lines.append(_FENCE_END)
     # Flatten into the single prompt string sent as the user message.
     return "\n".join(lines)
 

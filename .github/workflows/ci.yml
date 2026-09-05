@@ -123,8 +123,10 @@ jobs:
           promptstrike version
 
   # -------------------------------------------------------------------------------------------
-  # Secret scanning. This repository is public and holds an offensive-security tool; a committed
-  # credential would be found by someone else first.
+  # Secret scanning. This repository holds an offensive-security tool and is intended to go
+  # public; a committed credential would be found by someone else first.
+  # NOTE: gitleaks-action requires GITLEAKS_LICENSE for ORGANISATION-owned repositories. This
+  # passes under a personal account and would start failing on a transfer to an org.
   # -------------------------------------------------------------------------------------------
   secrets:
     name: secret scan
