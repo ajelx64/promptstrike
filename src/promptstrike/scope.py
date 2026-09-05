@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 import yaml
 
@@ -54,17 +54,109 @@ def _split_target(target: str) -> tuple[str | None, str, str]:
     return raw.lower(), "", raw
 
 
-def _norm_endpoint(value: str) -> str:
-    """Strip scheme + query/fragment, lowercase, drop trailing slash — for host+path prefix compare.
+# Ports that carry no meaning because they are the scheme's default; "example.com:443" and
+# "example.com" are the same origin, so the gate must not treat them as different assets.
+_DEFAULT_PORTS = {"http": "80", "https": "443"}
 
-    Query strings are dropped so an in-scope endpoint still matches when invoked with params
-    (e.g. Azure-hosted models' ``?api-version=...``).
+# How many times a percent-decode is retried before giving up. Double-encoding ("%2561dmin")
+# decodes to "%61dmin", which some servers decode a second time; one pass would leave the gate
+# comparing a different string than the server resolves. The cap stops a decode bomb.
+_MAX_PERCENT_DECODE_PASSES = 3
+
+
+def _decode_percent_escapes(path: str) -> str:
+    """Percent-decode ``path`` until it stops changing, bounded by the pass cap."""
+    # Track the value across passes so we can stop as soon as decoding is a no-op.
+    decoded = path
+    # Bounded loop: repeated decoding handles multiply-encoded input without unbounded work.
+    for _ in range(_MAX_PERCENT_DECODE_PASSES):
+        # Decode one layer of %XX escapes.
+        once = unquote(decoded)
+        # A pass that changes nothing means we have reached the fully decoded form.
+        if once == decoded:
+            break
+        # Otherwise keep the decoded value and try again.
+        decoded = once
+    # Return the most-decoded form we reached.
+    return decoded
+
+
+def _remove_dot_segments(path: str) -> str:
+    """Resolve ``.`` and ``..`` segments, per RFC 3986 section 5.2.4."""
+    # Accumulates the surviving segments in order.
+    resolved: list[str] = []
+    # Split on "/" and walk each segment; empty strings here are the duplicate-slash case.
+    for segment in path.split("/"):
+        # "." means "this directory" and contributes nothing.
+        if segment == ".":
+            continue
+        # ".." pops the previous segment, which is how traversal is normally written.
+        if segment == "..":
+            # Only pop if there is something to pop; escaping above the root is clamped, not an
+            # error, so a target cannot climb out of the comparison entirely.
+            if resolved:
+                resolved.pop()
+            continue
+        # An empty segment comes from "//" - drop it so duplicate slashes collapse.
+        if segment == "":
+            continue
+        # Anything else is a real segment and is kept.
+        resolved.append(segment)
+    # Re-join with a single leading slash; the caller strips the leading slash for hosts.
+    return "/".join(resolved)
+
+
+def _norm_endpoint(value: str) -> str:
+    """Reduce a URL or ``host/path`` string to the exact form the transport will request.
+
+    The gate compares strings; the transport (httpx) canonicalizes before sending. If the two
+    disagree, an out-of-scope carve-out can be walked around by spelling the same resource
+    differently — ``/v1/x/../admin``, ``/v1//admin``, ``/v1/%61dmin`` and ``host:443/v1/admin``
+    all reach ``/v1/admin`` on the wire. Both the asset and the target go through this function,
+    so the comparison happens in one canonical space rather than on raw operator input.
+
+    Query strings are still dropped, so an in-scope endpoint keeps matching when invoked with
+    params (e.g. Azure-hosted models' ``?api-version=...``).
     """
-    v = value.strip().lower()
-    if "://" in v:
-        v = v.split("://", 1)[1]
-    v = v.split("?", 1)[0].split("#", 1)[0]
-    return v.rstrip("/")
+    # Normalize whitespace and case up front; hosts are case-insensitive and paths are compared
+    # case-insensitively here on purpose, because a carve-out spelled /admin must also catch
+    # /ADMIN rather than failing open on capitalisation.
+    working = value.strip().lower()
+    # Remember the scheme before removing it - it decides which port counts as default.
+    scheme = ""
+    # A scheme is present only when "://" appears; bare "host/path" assets have none.
+    if "://" in working:
+        # Split once so a "://" later in the path cannot be mistaken for the scheme separator.
+        scheme, working = working.split("://", 1)
+    # Drop the query string and fragment; neither identifies the resource for scope purposes.
+    working = working.split("?", 1)[0].split("#", 1)[0]
+    # Separate authority (host[:port]) from path at the first slash.
+    authority, slash, path = working.partition("/")
+    # Userinfo ("user:secret@host") is credentials, not identity - strip it so it cannot be used
+    # to make an out-of-scope host look like a different string.
+    if "@" in authority:
+        # Take the part after the LAST "@", since userinfo may itself contain one.
+        authority = authority.rsplit("@", 1)[1]
+    # Remove the port when it is the scheme's default, so host and host:443 compare equal.
+    if ":" in authority:
+        # Split the port off the host.
+        host_only, _, port = authority.rpartition(":")
+        # Only strip when we know the scheme and the port is that scheme's default.
+        if host_only and port == _DEFAULT_PORTS.get(scheme):
+            authority = host_only
+    # Restore the leading slash that partition() consumed, when there was a path at all.
+    path = slash + path
+    # Decode percent-escapes so %61dmin is compared as admin.
+    path = _decode_percent_escapes(path)
+    # Strip RFC 3986 path parameters (";sid=1") from each segment; servers ignore them for
+    # routing, so leaving them in would let ";" hide a carve-out.
+    path = "/".join(segment.split(";", 1)[0] for segment in path.split("/"))
+    # Resolve dot-segments and collapse duplicate slashes.
+    path = _remove_dot_segments(path)
+    # Re-assemble; the path is empty for a bare host, in which case no slash is added.
+    canonical = authority + ("/" + path if path else "")
+    # Drop any trailing slash so "/v1/" and "/v1" are the same asset.
+    return canonical.rstrip("/")
 
 
 def asset_matches(asset: ScopeAsset, target: str) -> bool:
@@ -74,24 +166,41 @@ def asset_matches(asset: ScopeAsset, target: str) -> bool:
     port is not matched against a portless asset). Both are the fail-closed direction for an
     authorization gate — when in doubt, deny.
     """
+    # Split the target into the pieces each asset type needs; raw keeps the original spelling.
     host, _path, raw = _split_target(target)
-    val = asset.value.strip().lower()
+    # The asset's own value, normalized for case so comparisons are case-insensitive.
+    asset_value = asset.value.strip().lower()
 
     if asset.type == AssetType.model:
         token = raw.strip().lower()
-        return token == val or token == f"model:{val}"
+        return token == asset_value or token == f"model:{asset_value}"
 
     if asset.type == AssetType.host:
-        return host == val if host else raw.strip().lower() == val
+        return host == asset_value if host else raw.strip().lower() == asset_value
 
     if asset.type == AssetType.domain:
-        base = val.removeprefix("*.")
-        return bool(host) and (host == base or host.endswith("." + base))
+        # An explicit "*." prefix means subdomains ONLY. Bug-bounty scope grammars treat the apex
+        # as a separate asset that is frequently excluded, so letting the wildcard cover it would
+        # silently widen scope inside the deny-by-default control.
+        wildcard_only = asset_value.startswith("*.")
+        # The domain itself, with any wildcard prefix removed.
+        base_domain = asset_value.removeprefix("*.")
+        # No host means there is nothing to compare against.
+        if not host:
+            return False
+        # A subdomain match is valid for both spellings, and the leading dot keeps it
+        # boundary-safe so example.com.evil.net cannot match example.com.
+        if host.endswith("." + base_domain):
+            return True
+        # The apex matches only when the asset was written WITHOUT a wildcard.
+        return host == base_domain and not wildcard_only
 
-    # endpoint (default): normalized host+path prefix match with a "/" boundary.
-    a = _norm_endpoint(val)
-    t = _norm_endpoint(raw)
-    return t == a or t.startswith(a + "/")
+    # endpoint (default): both sides are reduced to the form the transport will actually
+    # request, then compared as a host+path prefix on a "/" boundary so /v1 cannot match
+    # /v1administrator while /v1/administrator still does.
+    canonical_asset = _norm_endpoint(asset_value)
+    canonical_target = _norm_endpoint(raw)
+    return canonical_target == canonical_asset or canonical_target.startswith(canonical_asset + "/")
 
 
 def check(program: Program, target: str) -> ScopeDecision:
