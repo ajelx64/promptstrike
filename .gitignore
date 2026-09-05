@@ -37,3 +37,8 @@ reports/
 .coverage
 .coverage.*
 htmlcov/
+
+# Claude Code project settings. Kept local rather than committed: a tracked settings.json
+# auto-enables a third-party plugin marketplace in every cloner's session without their opt-in.
+# The file itself is benign; the objection is to making that choice on someone else's behalf.
+.claude/settings.json
