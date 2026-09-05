@@ -9,30 +9,45 @@ from __future__ import annotations
 
 from promptstrike import taxonomy
 from promptstrike.cvss import Severity
+from promptstrike.llm.target import redact_target
 from promptstrike.models import Finding, Platform, ProbeResult, Program
 
 
 def _first_model(result: ProbeResult) -> str:
-    return next((ev.model for ev in result.evidence if ev.model), "")
+    # First evidence entry that recorded a model name, else "" when none did (dry runs do not).
+    return next((entry.model for entry in result.evidence if entry.model), "")
 
 
 def _steps_from_evidence(result: ProbeResult) -> list[str]:
-    steps = [f"Target endpoint: {result.target}"]
-    for i, ev in enumerate(result.evidence, 1):
-        steps.append(f"{i}. Send prompt: {ev.prompt!r}")
-        if ev.response:
-            snippet = " ".join(ev.response.split())
+    # Numbered reproduction steps always start by naming the target that was probed.
+    # Redacted, because these steps are rendered into the report that is SUBMITTED to a
+    # third-party program - a target written with inline credentials would disclose the
+    # operator's own secrets to that program.
+    steps = [f"Target endpoint: {redact_target(result.target)}"]
+    # Number each evidence entry as one reproduction step, in the order prompts were sent.
+    for step_number, evidence_entry in enumerate(result.evidence, 1):
+        # Record exactly which prompt was sent at this step.
+        steps.append(f"{step_number}. Send prompt: {evidence_entry.prompt!r}")
+        # Only add an "Observed response" line when the target returned one (dry runs won't).
+        if evidence_entry.response:
+            # Collapse whitespace/newlines so one response renders as a single reproduction line.
+            snippet = " ".join(evidence_entry.response.split())
+            # Truncate long responses so the reproduction steps stay readable.
             if len(snippet) > 200:
                 snippet = snippet[:200] + "..."
+            # Attach the (possibly truncated) response snippet under its prompt.
             steps.append(f"   Observed response: {snippet!r}")
+    # Hand back the full ordered list of reproduction-step strings.
     return steps
 
 
 def _description(result: ProbeResult) -> str:
+    # Resolve the human-readable OWASP category title for the description text.
     name = taxonomy.title(result.category)
+    # Build the finding's narrative description from the probe run's recorded facts only.
     return (
         f"Probe '{result.probe_id}' ({result.category.value} — {name}) was run against "
-        f"{result.target}. Detector '{result.detector}' verdict: {result.detail}"
+        f"{redact_target(result.target)}. Detector '{result.detector}' verdict: {result.detail}"
     )
 
 
@@ -46,15 +61,20 @@ def promote(
     severity: Severity | None = None,
 ) -> Finding:
     """Build a draft :class:`Finding` from a probe run. A CVSS vector, if given, sets score+severity."""
+    # Carry the probe's OWASP-LLM category straight through onto the finding.
     category = result.category
+    # Prefer an explicit platform override, else fall back to the program's platform, else "other".
     resolved_platform = platform or (program.platform if program else Platform.other)
+    # Assemble the structured finding skeleton; narrative fields are intentionally left for later.
     finding = Finding(
         run_id=result.run_id,
         program=result.program,
         platform=resolved_platform,
         title=title or f"{taxonomy.title(category)} in {result.target}",
         category=category,
-        target=result.target,
+        # Redacted at promotion, so no downstream consumer - report, database, TUI - ever
+        # holds the credential form. This is the last point where the raw target exists.
+        target=redact_target(result.target),
         model=_first_model(result),
         summary=result.detail,
         description=_description(result),
@@ -65,4 +85,5 @@ def promote(
     # An explicit severity applies only when a CVSS vector didn't already derive one.
     if severity is not None and not cvss_v31_vector:
         finding.severity = severity
+    # Return the assembled draft finding for the operator (or report stage) to refine further.
     return finding

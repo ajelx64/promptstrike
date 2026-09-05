@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pathlib
+import tempfile
+
 import pytest
 
 from promptstrike.models import AssetType, Platform, Program, ScopeAsset
@@ -200,3 +203,28 @@ def test_bare_domain_asset_still_matches_its_apex() -> None:
     assert check(program, "https://example.com/").allowed is True
     # And so does a subdomain.
     assert check(program, "https://chat.example.com/").allowed is True
+
+
+def test_program_name_cannot_escape_the_registry_directory() -> None:
+    """A program name becomes a filename, so raw operator input must be validated.
+
+    ``Program.name`` is slug-validated by pydantic, but ``get``/``exists`` take the string
+    straight from ``--program``. Low severity on a single-user CLI, but a security tool should
+    not build a filesystem path out of unvalidated input.
+    """
+    # A store rooted at a throwaway directory.
+    store = ProgramStore(pathlib.Path(tempfile.mkdtemp()))
+    # Each of these would resolve outside the registry directory if joined unchecked.
+    for hostile_name in ("../../etc/passwd", "..", "a/b", "/abs", "C:/abs", "name with space"):
+        # The store must refuse rather than resolve it.
+        with pytest.raises(ValueError):
+            store.exists(hostile_name)
+
+
+def test_ordinary_program_names_still_work() -> None:
+    """Positive control: the validator must not reject legitimate slugs."""
+    # A store rooted at a throwaway directory.
+    store = ProgramStore(pathlib.Path(tempfile.mkdtemp()))
+    # Normal names are accepted; the file simply does not exist yet.
+    assert store.exists("example") is False
+    assert store.exists("google-ai-vrp-2026") is False
