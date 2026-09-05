@@ -58,7 +58,13 @@ def _split_target(target: str) -> tuple[str | None, str, str]:
         # urlparse gives us .hostname with the port and any userinfo already stripped off.
         parsed_url = urlparse(raw)
         # Lower-case the host (DNS is case-insensitive); a URL with no host stays None, not "".
-        hostname = parsed_url.hostname.lower() if parsed_url.hostname else None
+        # Folded through the same canonicalizer so the host and domain rules below compare the
+        # hostname the resolver will use, not the one the operator happened to paste.
+        hostname = (
+            _canonical_authority(parsed_url.hostname.lower(), target)
+            if parsed_url.hostname
+            else None
+        )
         # Hand back the host and path separately; host/domain rules use one, endpoint rules both.
         return hostname, (parsed_url.path or ""), raw
     # No scheme but a slash: treat the leading token as the host and the rest as the path.
@@ -69,11 +75,16 @@ def _split_target(target: str) -> tuple[str | None, str, str]:
         # it "x@internal.example.com" still ends in ".example.com" and matched a domain asset
         # that the bare hostname had been carved out of.
         host = host.rsplit("@", 1)[-1]
+        # Fold IDNA separators here too; this branch feeds the same host/domain rules.
+        host = _canonical_authority(host.lower(), target)
         # An empty host becomes None so host/domain rules see "no host" rather than "".
-        return (host.lower() or None), "/" + path, raw
+        return (host or None), "/" + path, raw
     # Bare token: a hostname or a model id, with no path to speak of. Userinfo is stripped for
     # the same reason as the branch above; a model id never contains "@" so this is inert there.
-    return raw.rsplit("@", 1)[-1].lower(), "", raw
+    bare = raw.rsplit("@", 1)[-1].lower()
+    # A bare token can still be a hostname, so it gets the same authority contract. Model ids are
+    # ASCII in practice and pass through unchanged.
+    return _canonical_authority(bare, target), "", raw
 
 
 # Ports that carry no meaning because they are the scheme's default; "example.com:443" and
@@ -157,6 +168,42 @@ def _reject_uncanonicalizable_path(path: str, original: str) -> None:
             raise ValueError(f"trailing dot or space in path segment of {original!r}")
 
 
+# Codepoints that IDNA treats as label separators, exactly as Python's own ``encodings.idna``
+# does. They are ordinary characters to a naive string compare but a DOT to the resolver, which
+# is what made them a scope bypass: the gate saw one hostname and httpx contacted another.
+_IDNA_LABEL_SEPARATORS = "\u3002\uff0e\uff61"
+
+
+def _canonical_authority(host: str, original: str) -> str:
+    """Reduce a hostname to the form the resolver will use, or refuse it.
+
+    This is the last field the refusal contract reached, and it produced the worst outcome the
+    tool has: an exhaustive sweep of the BMP found three codepoints - U+3002, U+FF0E and U+FF61 -
+    that are label separators to ``idna`` and httpx but plain characters here, so
+    ``admin\uff0einternal.example.com`` matched an in-scope ``example.com`` while the transport
+    contacted the explicitly carved-out ``admin.internal.example.com`` - and the authorization
+    log recorded ``allowed: true``. A safe-harbor artifact that certifies an authorization which
+    never existed is worse than no log.
+
+    Non-ASCII that is not a separator is REFUSED rather than converted to punycode. Converting
+    would mean re-implementing IDNA's mapping rules and agreeing with the transport's version of
+    them on every input - the class of near-agreement that produced five rounds of bypasses here.
+    An operator with a genuine internationalized target supplies the ``xn--`` form, which is what
+    goes on the wire anyway.
+    """
+    # Fold the three separator codepoints to an ordinary dot, so the label structure the resolver
+    # sees is the label structure this gate compares.
+    folded = host
+    for separator in _IDNA_LABEL_SEPARATORS:
+        folded = folded.replace(separator, ".")
+    # Anything still outside ASCII cannot be compared safely; refuse it and say why.
+    if not folded.isascii():
+        raise ValueError(
+            f"non-ASCII hostname in {original!r}; supply the punycode (xn--) form instead"
+        )
+    return folded
+
+
 def _canonical_hostname(value: str, original: str) -> str:
     """Reduce a ``host`` or ``domain`` asset value to a bare hostname, or refuse it.
 
@@ -166,6 +213,9 @@ def _canonical_hostname(value: str, original: str) -> str:
     nothing at all and evaporated silently while a broad in-scope domain authorized the host it
     was meant to exclude. An unusable asset must deny loudly instead.
     """
+    # Fold IDNA separators and refuse non-ASCII first: a carve-out pasted with a homoglyph dot
+    # would otherwise pass every check below and then silently match nothing.
+    value = _canonical_authority(value, original)
     # A scheme means the operator wrote a URL where a hostname belongs.
     if "://" in value:
         raise ValueError(f"{original!r} is a URL, not a hostname - use type: endpoint")
@@ -265,6 +315,9 @@ def _norm_endpoint(value: str) -> str:
                 # Anything else - "+443", "4 43", "0x1bb", unicode digits - is not something we
                 # can canonicalize, and the transport may well accept it. Refuse.
                 raise ValueError(f"uncanonicalizable authority in {value!r}")
+    # Canonicalize the authority itself: fold IDNA label separators and refuse non-ASCII, so
+    # this comparison happens on the same host the resolver will use.
+    authority = _canonical_authority(authority, value)
     # Restore the leading slash that partition() consumed, when there was a path at all.
     path = slash + path
     # Decode percent-escapes so %61dmin is compared as admin.
@@ -372,13 +425,16 @@ def check(program: Program, target: str) -> ScopeDecision:
     # outright. It is not safe to compare a string the transport may interpret differently, and
     # the failure is global rather than per-asset: if we cannot say what this target IS, we
     # cannot say it is out of scope either.
-    # Only endpoint-shaped targets go through the canonicalizer; a bare model token ("gpt-x",
-    # "model:gpt-x") has no authority to normalize and is matched by exact comparison instead.
-    if "://" in target or "/" in target:
-        try:
+    # Every target is validated, whatever its shape. An earlier version guarded only URL-shaped
+    # targets, which left a bare "admin\uff0einternal.example.com" skipping the contract
+    # entirely. _split_target applies the authority rules to all three branches; _norm_endpoint
+    # additionally applies the path rules, and only applies to endpoint-shaped values.
+    try:
+        _split_target(target)
+        if "://" in target or "/" in target:
             _norm_endpoint(target)
-        except ValueError as exc:
-            return ScopeDecision(False, f"target could not be canonicalized: {exc}")
+    except ValueError as exc:
+        return ScopeDecision(False, f"target could not be canonicalized: {exc}")
     # Precedence rule 3: exclusions are evaluated BEFORE inclusions, so out-of-scope always wins
     # over an overlapping in-scope entry (e.g. /v1 in scope but /v1/admin carved out).
     for excluded_asset in program.out_of_scope:

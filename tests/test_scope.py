@@ -284,3 +284,80 @@ def test_model_and_host_targets_are_unaffected_by_port_parsing() -> None:
     # "model:gpt-x" is a supported target spelling; its colon is not a port separator.
     assert check(_program(), "model:gpt-x").allowed is True
     assert check(_program(), "gpt-x").allowed is True
+
+
+# Codepoints that IDNA and httpx treat as label separators but a naive string compare does not.
+# An exhaustive BMP sweep found exactly these three; each made the gate authorize one host while
+# the transport contacted a different, explicitly carved-out one - and the authorization log
+# recorded allowed=true, so the artifact whose only job is to prove the operator stayed in scope
+# certified an authorization that never existed.
+IDNA_LABEL_SEPARATORS = ["。", "．", "｡"]
+
+
+@pytest.mark.parametrize("separator", IDNA_LABEL_SEPARATORS)
+def test_homoglyph_dot_cannot_evade_a_host_carve_out(separator: str) -> None:
+    """A hostname spelled with an IDNA separator must resolve to the same scope decision."""
+    # Broad in-scope domain with a specific host carved out of it - the ordinary scope shape.
+    program = _program(
+        in_scope=[ScopeAsset(value="example.com", type=AssetType.domain)],
+        out_of_scope=[
+            ScopeAsset(value="admin.internal.example.com", type=AssetType.host)
+        ],
+    )
+    # The carved-out host, spelled with a homoglyph dot the operator could paste from a PDF.
+    target = f"https://admin{separator}internal.example.com/v1/chat"
+    decision = check(program, target)
+    # It must be denied, and denied BY THE CARVE-OUT rather than by falling through.
+    assert decision.allowed is False
+    assert "OUT-OF-SCOPE" in decision.reason
+
+
+@pytest.mark.parametrize("separator", IDNA_LABEL_SEPARATORS)
+def test_homoglyph_dot_in_an_asset_does_not_make_it_inert(separator: str) -> None:
+    """A carve-out pasted with a homoglyph dot must still exclude the ASCII host."""
+    # The operator pastes the carve-out with a homoglyph; the target is spelled normally.
+    program = _program(
+        in_scope=[ScopeAsset(value="example.com", type=AssetType.domain)],
+        out_of_scope=[
+            ScopeAsset(
+                value=f"admin{separator}internal.example.com", type=AssetType.host
+            )
+        ],
+    )
+    decision = check(program, "https://admin.internal.example.com/v1/chat")
+    # The carve-out must not evaporate.
+    assert decision.allowed is False
+    assert "OUT-OF-SCOPE" in decision.reason
+
+
+def test_non_ascii_hostname_is_refused_with_an_actionable_message() -> None:
+    """Non-separator non-ASCII is refused rather than converted.
+
+    Converting would mean re-implementing IDNA's mapping and agreeing with the transport's
+    version of it on every input - the near-agreement class that produced these bypasses.
+    """
+    decision = check(_program(), "https://münchen.example.com/v1/chat")
+    assert decision.allowed is False
+    # The message must tell the operator what to do instead.
+    assert "punycode" in decision.reason
+
+
+def test_punycode_hostnames_are_accepted() -> None:
+    """The wire form of an internationalized host is ASCII and must work normally."""
+    program = _program(
+        in_scope=[ScopeAsset(value="xn--mnchen-3ya.example.com", type=AssetType.host)],
+        out_of_scope=[],
+    )
+    assert check(program, "https://xn--mnchen-3ya.example.com/v1/chat").allowed is True
+
+
+def test_bare_token_targets_also_go_through_the_authority_contract() -> None:
+    """An earlier guard covered only URL-shaped targets, so a bare hostname skipped it."""
+    program = _program(
+        in_scope=[ScopeAsset(value="example.com", type=AssetType.domain)],
+        out_of_scope=[
+            ScopeAsset(value="admin.internal.example.com", type=AssetType.host)
+        ],
+    )
+    # No scheme and no slash - this used to bypass the contract entirely.
+    assert check(program, "admin．internal.example.com").allowed is False
