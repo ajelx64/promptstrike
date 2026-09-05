@@ -122,7 +122,8 @@ the extra setup.
 Live target traffic is gated by four independent conditions that must **all** hold — this is defense in
 depth, enforced in code (`config.py`, `commands/test.py`, `llm/target.py`):
 
-1. Dry-run disabled is *not* required to be permanent — the global default is `PROMPTSTRIKE_DRY_RUN=true`.
+1. `PROMPTSTRIKE_DRY_RUN` is `false`. The global default is `true`, and while it is true every
+   live send is refused at `TargetClient.send` (exit 2 from the CLI) rather than downgraded.
 2. The operator passes `--live` to `test` (its absence is always a dry run).
 3. The per-call scope check passes for that exact target (out-of-scope → `ScopeError`, request never made).
 4. The rate limiter admits the send.

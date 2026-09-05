@@ -32,7 +32,7 @@ enforced in code, not by convention, and each is covered by tests.
 | # | Invariant | Enforced in | How it fails |
 |---|---|---|---|
 | 1 | **Authorized programs only.** No traffic to an asset that is not registered in-scope for a program flagged `allows_ai_testing`. | `scope.py` → `check`, `enforce`; called from `llm/target.py` → `TargetClient.send` | Closed. Default-deny: an unmatched target is denied, and out-of-scope beats in-scope. |
-| 2 | **Dry run by default.** Nothing leaves the process without an explicit `--live`. | `config.py` → `Settings.dry_run`; `llm/target.py` → `TargetClient.send(live=False)` | Closed. A caller that forgets the flag sends nothing. |
+| 2 | **Dry run by default.** Two things must both be true before anything leaves the process: the global switch must be lifted (`PROMPTSTRIKE_DRY_RUN=false`) **and** the call must ask for `live`. | `llm/target.py` → `TargetClient.send` step 0 (refuses live while the switch is on, and logs the refusal), plus `TargetClient.send(live=False)` as the per-call default. `config.py` → `Settings.dry_run` supplies the switch; the CLI fast-fails on it too. | Closed, twice. A caller that forgets the flag sends nothing, and a caller that passes it while the switch is on is refused rather than downgraded. |
 | 3 | **Rate limited (no DoS).** All live target traffic passes a minimum-interval limiter. | `llm/target.py` → `RateLimiter.acquire`, acquired by `TargetClient.send` before every live send | Open if misconfigured — a non-positive rps disables limiting. The rate is set per program or from settings; it is not inferred. |
 | 4 | **No auto-submission.** The tool never POSTs a finding to a platform. | Absence of any such code path — nothing anywhere POSTs to a bug-bounty platform. The probe path's only outbound call is `llm/target.py` → `openai_chat_transport`, which talks to the *target*. `FindingStatus` past `ready` is set by the operator, by hand. | N/A — there is nothing to disable. |
 
@@ -175,7 +175,7 @@ routing around it silently removes every one of them.
 
 ## Tests
 
-`pytest` from the repo root. 168 tests, no network access required — the transport, the rate
+`pytest` from the repo root. 199 tests, no network access required — the transport, the rate
 limiter's clock, and its sleep are all injectable, so live behavior is tested deterministically.
 
 `tests/test_scope.py` is the one to read first if you are auditing the safety model: it is where the

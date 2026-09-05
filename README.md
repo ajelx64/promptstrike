@@ -16,8 +16,10 @@ is a solved, commoditized problem, and the ecosystem now penalizes autonomous sc
 
 ## Safety model (read this first)
 
-- **`DRY_RUN=true` is the default.** No live network request is sent to any target until you pass
-  `--live`, *and* the target passes a scope check, *and* rate-limiting is applied.
+- **`DRY_RUN=true` is the default.** No live network request is sent to any target until you
+  lift the global switch (`PROMPTSTRIKE_DRY_RUN=false`) *and* pass `--live`, *and* the target
+  passes a scope check, *and* rate-limiting is applied. The switch is enforced in
+  `TargetClient.send`, the single point every prompt passes through - not only in the CLI.
 - **Authorized programs only.** A target that is not in your scope registry (and flagged
   `allows_ai_testing`) is rejected *before* any request is sent — your CFAA / safe-harbor protection.
 - **No auto-submission.** `promptstrike` never submits to a platform. It produces a report *you*
@@ -49,6 +51,7 @@ See `.env.example` for the variables, and the
 promptstrike program add --file my-program.yaml     # register an authorized program + scope
 promptstrike program scope-check https://api.example.com/v1/chat -p example
 promptstrike test --program example --probe prompt-injection-direct   # DRY_RUN: renders, sends nothing
+$env:PROMPTSTRIKE_DRY_RUN='false'                                     # lift the global switch
 promptstrike test --program example --probe prompt-injection-direct --live
 promptstrike finding promote <run-id>
 promptstrike report draft  --finding 1 --platform google_ai_vrp

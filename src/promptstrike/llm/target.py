@@ -29,6 +29,16 @@ from promptstrike.scope import ScopeError, check
 Transport = Callable[[str, str, Program], Awaitable[tuple[str, dict]]]
 
 
+class DryRunError(Exception):
+    """Raised when live traffic is requested while the global dry-run switch is active.
+
+    Distinct from :class:`~promptstrike.scope.ScopeError`: that one means "this target is not
+    authorized", this one means "no target may be contacted at all right now". Keeping them
+    separate matters because the operator's fix differs - one is a scope registration, the other
+    is an environment setting.
+    """
+
+
 class RateLimiter:
     """Minimum-interval limiter. ``sleep``/``clock`` are injectable for deterministic tests."""
 
@@ -138,12 +148,22 @@ class TargetClient:
         auth_log: AuthLog,
         transport: Transport | None = None,
         model: str = "",
+        allow_live: bool = False,
     ) -> None:
+        # The authorized program whose scope every send is checked against.
         self.program = program
+        # Minimum-interval limiter applied before each live send (the no-DoS guard).
         self.rate_limiter = rate_limiter
+        # Append-only authorization log; every attempt is recorded, allowed or not.
         self.auth_log = auth_log
+        # Injectable transport so tests never touch the network.
         self.transport = transport or openai_chat_transport
+        # Model identifier recorded on captured Evidence.
         self.model = model
+        # Whether this client may EVER send live traffic. Defaults to False so a caller that
+        # does not think about it cannot send: the CLI passes `not settings.dry_run`, and any
+        # library consumer must opt in deliberately and visibly at the construction site.
+        self.allow_live = allow_live
 
     async def send(self, prompt: str, target: str, *, live: bool = False) -> Evidence:
         """Send one prompt to ``target`` and capture the exchange as Evidence.
@@ -161,7 +181,34 @@ class TargetClient:
         nothing, and a target absent from the program's in-scope list is denied rather than
         allowed. New probes inherit all of this for free by going through here — which is the
         reason they must never construct a transport themselves.
+
+        Step 0 below is the global kill-switch. It lives here rather than only in the CLI because
+        this method is the single point every prompt passes through; a gate in a command can be
+        routed around by the TUI, a future command, or any library consumer, which would leave
+        the switch enforced somewhere other than where the documentation says it is.
         """
+        # Step 0 - global kill-switch, before any scope or transport work.
+        if live and not self.allow_live:
+            # Record the refusal before raising. A denied attempt is part of the safe-harbor
+            # artifact - the log's value comes from showing what was refused, not only what was
+            # sent - and live=False records what actually happened, not what was asked for.
+            self.auth_log.record(
+                program=self.program.name,
+                target=target,
+                prompt=prompt,
+                requested_live=True,
+                live=False,
+                allowed=False,
+                reason="global dry-run is active (PROMPTSTRIKE_DRY_RUN); live traffic refused",
+            )
+            # Fail closed and loudly. Silently downgrading to a dry run would be worse: an
+            # operator who believes they fired live probes and did not is exactly the failure
+            # this gate exists to prevent.
+            raise DryRunError(
+                "live traffic refused: PROMPTSTRIKE_DRY_RUN is true (the safety default). "
+                "Set PROMPTSTRIKE_DRY_RUN=false to permit live traffic."
+            )
+
         decision = check(self.program, target)
         # Log the attempt (denied attempts are logged too, for audit).
         self.auth_log.record(

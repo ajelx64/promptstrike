@@ -6,7 +6,7 @@ import json
 
 import pytest
 
-from promptstrike.llm.target import AuthLog, RateLimiter, TargetClient
+from promptstrike.llm.target import AuthLog, DryRunError, RateLimiter, TargetClient
 from promptstrike.models import AssetType, Platform, Program, ScopeAsset
 from promptstrike.scope import ScopeError
 
@@ -39,12 +39,19 @@ class SpyLimiter(RateLimiter):
         self.acquired += 1
 
 
-def _client(tmp_path, transport, limiter=None):
+def _client(tmp_path, transport, limiter=None, allow_live=True):
+    """Build a client for tests.
+
+    ``allow_live`` defaults to True here - the opposite of the production default - because most
+    tests in this file exercise the live path deliberately. The production default is False and
+    is covered explicitly by the dry-run-switch tests below.
+    """
     return TargetClient(
         _program(),
         rate_limiter=limiter or SpyLimiter(),
         auth_log=AuthLog(tmp_path / "auth.jsonl"),
         transport=transport,
+        allow_live=allow_live,
     )
 
 
@@ -113,3 +120,69 @@ async def test_auth_log_records_requested_live_on_denied(tmp_path) -> None:
     assert entry["requested_live"] is True  # operator asked to fire...
     assert entry["live"] is False  # ...but scope blocked it
     assert entry["allowed"] is False
+
+
+# ---------------------------------------------------------------------------------------------
+# The global dry-run kill-switch.
+#
+# PROMPTSTRIKE_DRY_RUN was documented as a "global safety switch" while nothing read it. The gate
+# now lives on TargetClient, which is the single point every prompt passes through, so the TUI,
+# a future command and any library consumer inherit it rather than each re-implementing it.
+# ---------------------------------------------------------------------------------------------
+
+
+async def test_global_dry_run_refuses_live_and_does_not_send(tmp_path) -> None:
+    """With the switch active, a live send is refused before the transport is touched."""
+    # A transport that records any call, so "was it invoked" is directly observable.
+    spy = SpyTransport()
+    # Build a client in the PRODUCTION default state - live traffic not permitted.
+    client = _client(tmp_path, spy, allow_live=False)
+    # Asking for live must raise rather than silently downgrading to a dry run.
+    with pytest.raises(DryRunError) as raised:
+        await client.send("hello", "https://api.example.com/v1/chat", live=True)
+    # The message must name the variable the operator has to change, not just say "refused".
+    assert "PROMPTSTRIKE_DRY_RUN" in str(raised.value)
+    # And nothing may have reached the network.
+    assert spy.calls == []
+
+
+async def test_global_dry_run_refusal_is_logged(tmp_path) -> None:
+    """A refused attempt is still an authorization-log entry - that is the artifact's value."""
+    # Fixed log path so the file can be read back and asserted on.
+    log_path = tmp_path / "auth.jsonl"
+    # Client in the refusing state, writing to that log.
+    client = TargetClient(
+        _program(),
+        rate_limiter=SpyLimiter(),
+        auth_log=AuthLog(log_path),
+        transport=SpyTransport(),
+        allow_live=False,
+    )
+    # Trigger the refusal; the exception itself is not what this test is about.
+    with pytest.raises(DryRunError):
+        await client.send("hello", "https://api.example.com/v1/chat", live=True)
+    # Exactly one entry should have been appended.
+    entries = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert len(entries) == 1
+    # It records what the operator ASKED for...
+    assert entries[0]["requested_live"] is True
+    # ...what actually happened, which is nothing...
+    assert entries[0]["live"] is False
+    # ...that it was refused...
+    assert entries[0]["allowed"] is False
+    # ...and why, so the log explains itself without the reader knowing the code.
+    assert "dry-run" in entries[0]["reason"]
+
+
+async def test_global_dry_run_still_allows_a_dry_run(tmp_path) -> None:
+    """The switch blocks live traffic only; rendering probes must still work."""
+    # Transport that would record a call if one happened.
+    spy = SpyTransport()
+    # Refusing client, as in production defaults.
+    client = _client(tmp_path, spy, allow_live=False)
+    # A dry run is not live traffic, so it proceeds normally.
+    evidence = await client.send("hello", "https://api.example.com/v1/chat", live=False)
+    # Nothing was sent...
+    assert spy.calls == []
+    # ...and the caller still gets the render-only Evidence it expects.
+    assert evidence.metadata["dry_run"] is True

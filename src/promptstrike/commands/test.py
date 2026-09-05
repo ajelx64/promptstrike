@@ -31,6 +31,20 @@ def test(
     """Run probes; dry run by default. Evidence is saved for promotion into a finding."""
     settings = get_settings()
     settings.ensure_dirs()
+
+    # Fast-fail before any setup work so the operator gets one clear line instead of a traceback
+    # from deeper in the run. This is a convenience: the authoritative gate is in
+    # TargetClient.send, which every prompt passes through no matter which caller reached it.
+    if live and settings.dry_run:
+        typer.secho(
+            "REFUSING --live: PROMPTSTRIKE_DRY_RUN is true (the safety default). "
+            "Set PROMPTSTRIKE_DRY_RUN=false in the environment or your env file to permit "
+            "live traffic.",
+            fg="red",
+            bold=True,
+        )
+        raise typer.Exit(code=2)
+
     prog = ProgramStore(settings.programs_dir).get(program)
     if prog is None:
         typer.secho(f"unknown program '{program}'", fg="red")
@@ -52,7 +66,11 @@ def test(
 
     rps = prog.rate_limit_rps or settings.rate_limit_rps
     client = TargetClient(
-        prog, rate_limiter=RateLimiter(rps), auth_log=AuthLog(settings.data_dir / "authlog.jsonl")
+        prog,
+        rate_limiter=RateLimiter(rps),
+        auth_log=AuthLog(settings.data_dir / "authlog.jsonl"),
+        # The global switch reaches the chokepoint here; dry_run=True means never send.
+        allow_live=not settings.dry_run,
     )
     runs = RunStore(settings.evidence_dir)
 

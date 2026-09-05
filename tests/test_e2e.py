@@ -72,7 +72,11 @@ async def test_full_pipeline_live_against_mock(mock_endpoint, data_dir) -> None:
 
     # 2. Fire the prompt-injection probe LIVE at the mock (real httpx transport).
     client = TargetClient(
-        program, rate_limiter=RateLimiter(rps=0), auth_log=AuthLog(data_dir / "auth.jsonl")
+        program,
+        rate_limiter=RateLimiter(rps=0),
+        auth_log=AuthLog(data_dir / "auth.jsonl"),
+        # Live path under test; production defaults this to False so a caller must opt in.
+        allow_live=True,
     )
     probe = get_probe(load_pack(builtin_pack_dir()), "prompt-injection-direct")
     result = await run_probe(client, probe, mock_endpoint, live=True)
@@ -105,7 +109,11 @@ async def test_full_pipeline_live_against_mock(mock_endpoint, data_dir) -> None:
 async def test_out_of_scope_target_never_fires(mock_endpoint, data_dir) -> None:
     program = _program()  # only 127.0.0.1 is in scope
     client = TargetClient(
-        program, rate_limiter=RateLimiter(rps=0), auth_log=AuthLog(data_dir / "auth.jsonl")
+        program,
+        rate_limiter=RateLimiter(rps=0),
+        auth_log=AuthLog(data_dir / "auth.jsonl"),
+        # Live path under test; production defaults this to False so a caller must opt in.
+        allow_live=True,
     )
     probe = get_probe(load_pack(builtin_pack_dir()), "prompt-injection-direct")
     with pytest.raises(ScopeError):

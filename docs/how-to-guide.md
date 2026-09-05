@@ -42,7 +42,12 @@ Four independent gates must all align before any request leaves the process. Thi
 — disabling one does not open the door:
 
 1. **`DRY_RUN` default.** The tool defaults to dry-run globally (`PROMPTSTRIKE_DRY_RUN=true`). In dry
-   run, probes render and record what *would* be sent, but nothing hits the network.
+   run, probes render and record what *would* be sent, but nothing hits the network. Enforced in
+   `TargetClient.send` - the single point every prompt passes through - so the TUI and any library
+   consumer inherit it, with a fast-fail in the CLI so you get one clear line instead of a
+   traceback. Asking for `--live` while the switch is on **refuses** (exit 2); it never silently
+   downgrades to a dry run, because believing you fired live probes when you did not is its own
+   failure.
 2. **The `--live` flag.** Even with dry-run disabled, `test` only fires when you explicitly pass
    `--live`. Its absence is a dry run.
 3. **Per-call scope check.** Every single send is scope-checked *before* the transport is touched. An
@@ -118,6 +123,7 @@ promptstrike program scope-check https://api.example.com/v1/chat -p example
 promptstrike test --program example --probe prompt-injection-direct
 
 # 4. Go live — real, rate-limited, scope-checked requests (out-of-scope targets are skipped)
+$env:PROMPTSTRIKE_DRY_RUN='false'   # gate 1: lift the global switch (default is 'true')
 promptstrike test --program example --probe prompt-injection-direct --live
 
 # 5. Promote a triggered run into a draft finding, scoring it with a CVSS v3.1 vector
@@ -304,6 +310,7 @@ pip install 'promptstrike[tui]'
 | `SKIP <probe> @ <target>: ...` during `test` | The target is out of scope for the program. Add it to `in_scope`, or check with `program scope-check`. |
 | `no endpoint target: pass --target or add an endpoint asset` | The program has no `endpoint`-type in-scope asset. Add one, or pass `--target`. |
 | Probes do nothing / everything is `[dry]` | You're in a dry run. Pass `--live` (and ensure the program has `allows_ai_testing: true`). |
+| `REFUSING --live` and exit code 2 | Gate 1 is holding: `PROMPTSTRIKE_DRY_RUN` is `true`. Set it to `false` to permit live traffic. This is the intended refusal, not a bug. |
 | `report --format pdf` produced an `.html` file | WeasyPrint (and its system GTK/Pango libs) isn't installed — see the admin guide. Output soft-fails to HTML. |
 | `tui` exits telling you to install something | `textual` isn't installed: `pip install 'promptstrike[tui]'`. |
 | `--ai` says "AI drafting skipped" | The `anthropic` package or `ANTHROPIC_API_KEY` is missing. Drafting is optional; the report is still produced. |

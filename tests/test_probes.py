@@ -71,7 +71,12 @@ def _client(tmp_path, response: str) -> tuple[TargetClient, _SpyTransport]:
     )
     spy = _SpyTransport(response)
     client = TargetClient(
-        prog, rate_limiter=RateLimiter(rps=0), auth_log=AuthLog(tmp_path / "auth.jsonl"), transport=spy
+        prog,
+        rate_limiter=RateLimiter(rps=0),
+        auth_log=AuthLog(tmp_path / "auth.jsonl"),
+        transport=spy,
+        # These tests drive the live path deliberately; production defaults this to False.
+        allow_live=True,
     )
     return client, spy
 
